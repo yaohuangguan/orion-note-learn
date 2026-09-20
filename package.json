@@ -16,6 +16,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@floating-ui/dom": "^1.8.0",
     "@tiptap/extension-highlight": "^3.0.0",
     "@tiptap/extension-placeholder": "^3.0.0",
     "@tiptap/pm": "^3.0.0",
