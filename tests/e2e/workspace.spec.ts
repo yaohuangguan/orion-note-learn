@@ -28,6 +28,83 @@ test('create, edit, persist, search and restore a note', async ({ page }) => {
   await page.getByRole('button', { name: '恢复', exact: true }).click()
   await expect(page.locator('.note-card')).toHaveCount(0)
 })
+test('pasted images and LaTeX formulas render and persist', async ({ page }) => {
+  await ready(page)
+  await page.getByRole('button', { name: '新建笔记', exact: false }).first().click()
+  await page.getByLabel('笔记标题', { exact: true }).fill('公式与图片')
+  const editor = page.getByRole('textbox', { name: '笔记正文' })
+  await editor.fill('')
+  await editor.click()
+
+  await page.evaluate(() => {
+    const data = new DataTransfer()
+    data.setData(
+      'text/plain',
+      String.raw`毫瓦换算：\(P(\text{mW}) = 10^{\frac{\text{dBm}}{10}}\)`,
+    )
+    document.querySelector<HTMLElement>('[contenteditable="true"]')?.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+    )
+  })
+
+  const formula = page.locator('[data-type="inline-math"]')
+  await expect(formula).toHaveAttribute(
+    'data-latex',
+    String.raw`P(\text{mW}) = 10^{\frac{\text{dBm}}{10}}`,
+  )
+  await expect(formula.locator('.katex .mfrac')).toBeVisible()
+  await expect(formula.locator('.katex .msupsub')).toBeVisible()
+
+  await page.evaluate(() => {
+    const base64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+    const data = new DataTransfer()
+    data.items.add(new File([bytes], 'clipboard.png', { type: 'image/png' }))
+    document.querySelector<HTMLElement>('[contenteditable="true"]')?.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+    )
+  })
+
+  const image = editor.locator('img[alt="clipboard.png"]')
+  await expect(image).toHaveAttribute('src', /^data:image\/png;base64,/)
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          new Promise<boolean>((resolve, reject) => {
+            const request = indexedDB.open('orion-note-learn')
+            request.onerror = () => reject(request.error)
+            request.onsuccess = () => {
+              const db = request.result
+              const read = db.transaction('workspace').objectStore('workspace').get('data')
+              read.onerror = () => reject(read.error)
+              read.onsuccess = () => {
+                const note = read.result?.notes?.find(
+                  (item: { title?: string }) => item.title === '公式与图片',
+                )
+                resolve(
+                  Boolean(
+                    note?.html?.includes('data-type="inline-math"') &&
+                      note.html.includes('data:image/png;base64,'),
+                  ),
+                )
+                db.close()
+              }
+            }
+          }),
+      ),
+    )
+    .toBe(true)
+  await page.reload()
+  await page.getByRole('button', { name: '公式与图片', exact: true }).click()
+  await expect(page.getByLabel('笔记标题', { exact: true })).toHaveValue('公式与图片')
+  await expect(page.locator('[data-type="inline-math"] .katex .mfrac')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'clipboard.png' })).toHaveAttribute(
+    'src',
+    /^data:image\/png;base64,/,
+  )
+})
 test('handwriting supports strokes, undo, redo and reload', async ({ page }) => {
   await ready(page)
   await page.getByRole('tab', { name: '手写画板' }).click()

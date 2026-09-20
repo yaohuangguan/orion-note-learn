@@ -23,17 +23,31 @@ export function saveWorkspace(data: Workspace) {
   return next
 }
 export function sanitizeHtml(html: string) {
-  return DOMPurify.sanitize(html, {
+  const clean = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ['img', 'video', 'audio', 'iframe', 'style', 'form', 'input'],
-    FORBID_ATTR: ['style'],
+    ADD_ATTR: ['data-type', 'data-latex', 'src', 'alt', 'title', 'width', 'height'],
+    FORBID_TAGS: ['video', 'audio', 'iframe', 'style', 'form', 'input', 'object', 'embed'],
+    FORBID_ATTR: ['style', 'srcset'],
   })
+  const doc = new DOMParser().parseFromString(clean, 'text/html')
+  doc.querySelectorAll('img').forEach((image) => {
+    const src = image.getAttribute('src') || ''
+    if (!/^data:image\/(?:png|jpe?g|gif|webp|avif);base64,/i.test(src)) image.remove()
+  })
+  return doc.body.innerHTML
 }
 export function sanitizeWorkspace(data: Workspace): Workspace {
   return { ...data, notes: data.notes.map((n) => ({ ...n, html: sanitizeHtml(n.html) })) }
 }
 export function htmlText(html: string) {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  doc.querySelectorAll<HTMLElement>('[data-type="inline-math"], [data-type="block-math"]').forEach((el) => {
+    const latex = el.dataset.latex?.trim()
+    if (latex) el.replaceWith(doc.createTextNode(`$${latex}$`))
+  })
+  doc.querySelectorAll('img').forEach((image) => {
+    image.replaceWith(doc.createTextNode(image.alt ? `[图片：${image.alt}]` : '[图片]'))
+  })
   doc.querySelectorAll('p,h1,h2,h3,li,blockquote,pre').forEach((el) => el.append('\n'))
   return doc.body.textContent?.trim() || ''
 }

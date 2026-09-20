@@ -761,6 +761,62 @@ svg {
   pointer-events: none;
   height: 0;
 }
+.editor-feature-hint {
+  min-height: 20px;
+  margin: -10px 0 14px;
+  color: #9aa493;
+  font-size: 11px;
+  line-height: 1.6;
+}
+.editor-feature-hint.error {
+  color: #b86656;
+}
+.note-prose img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 22px auto;
+  border: 1px solid #e2e8de;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px #2c432b0d;
+}
+.note-prose img.ProseMirror-selectednode,
+.note-prose .tiptap-mathematics-render.ProseMirror-selectednode {
+  outline: 2px solid #7f9e76;
+  outline-offset: 3px;
+}
+.note-prose .tiptap-mathematics-render {
+  color: #354b3d;
+}
+.note-prose .tiptap-mathematics-render--editable {
+  cursor: pointer;
+}
+.note-prose .tiptap-mathematics-render[data-type='inline-math'] {
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 3px;
+  vertical-align: -0.12em;
+}
+.note-prose .tiptap-mathematics-render[data-type='block-math'] {
+  display: block;
+  overflow-x: auto;
+  margin: 24px 0;
+  padding: 18px 16px;
+  border: 1px solid #e4eadf;
+  border-radius: 9px;
+  background: #f8faf5;
+  text-align: center;
+}
+.note-prose .inline-math-error,
+.note-prose .block-math-error {
+  color: #b86656;
+  font-family: Consolas, monospace;
+}
+.pdf-document .tiptap-mathematics-render[data-type='block-math'] {
+  margin: 18px 0;
+  text-align: center;
+}
 .editor-footer {
   padding: 21px 0 26px;
   border-top: 1px solid var(--line);

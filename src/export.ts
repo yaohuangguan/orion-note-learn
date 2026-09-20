@@ -7,6 +7,10 @@ export function exportMarkdown(note: Note) {
   function walk(node: Node): string {
     if (node.nodeType === Node.TEXT_NODE) return node.textContent || ''
     if (!(node instanceof Element)) return ''
+    const mathType = node.getAttribute('data-type')
+    const latex = node.getAttribute('data-latex')?.trim() || ''
+    if (mathType === 'inline-math') return latex ? `$${latex}$` : ''
+    if (mathType === 'block-math') return latex ? `\n$$\n${latex}\n$$\n\n` : ''
     const inner = Array.from(node.childNodes).map(walk).join('')
     switch (node.tagName.toLowerCase()) {
       case 'h1':
@@ -42,6 +46,11 @@ export function exportMarkdown(note: Note) {
         return '\n'
       case 'a':
         return `[${inner}](${node.getAttribute('href') || ''})`
+      case 'img': {
+        const alt = (node.getAttribute('alt') || '笔记图片').replace(/[\[\]]/g, '')
+        const src = node.getAttribute('src') || ''
+        return src ? `![${alt}](${src})\n\n` : ''
+      }
       default:
         return inner
     }
@@ -58,9 +67,10 @@ export function exportPlainText(note: Note) {
 }
 
 export async function exportPDF(note: Note) {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+  const [{ default: html2canvas }, { jsPDF }, { default: katex }] = await Promise.all([
     import('html2canvas-pro'),
     import('jspdf'),
+    import('katex'),
   ])
   const root = document.createElement('div')
   root.className = 'pdf-document'
@@ -84,6 +94,14 @@ export async function exportPDF(note: Note) {
   root.append(metadata)
   const content = document.createElement('div')
   content.innerHTML = sanitizeHtml(note.html)
+  content
+    .querySelectorAll<HTMLElement>('[data-type="inline-math"], [data-type="block-math"]')
+    .forEach((element) => {
+      const latex = element.dataset.latex || ''
+      const displayMode = element.dataset.type === 'block-math'
+      element.classList.add('tiptap-mathematics-render')
+      katex.render(latex, element, { displayMode, throwOnError: false, strict: false })
+    })
   root.append(...Array.from(content.children))
   if (note.strokes.length) {
     const heading = document.createElement('h2')
