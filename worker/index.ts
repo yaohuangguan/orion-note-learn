@@ -22,6 +22,15 @@ type WorkspaceMeta = {
   updated_at: number
 }
 
+type PublicShareMeta = {
+  id: string
+  title: string
+  tags_json: string
+  chunk_count: number
+  created_at: number
+  updated_at: number
+}
+
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000
@@ -29,6 +38,7 @@ const AUTH_WINDOW_MS = 10 * 60 * 1000
 const AUTH_ATTEMPTS = 10
 const CHUNK_BYTES = 1_500_000
 const MAX_WORKSPACE_BYTES = 24_000_000
+const MAX_SHARE_BYTES = 8_000_000
 const MAX_IMAGE_BYTES = 12_000_000
 const IMAGE_TYPES = new Map([
   ['image/png', 'png'],
@@ -250,10 +260,13 @@ function validWorkspace(value: unknown): value is Record<string, unknown> {
   )
 }
 
-function chunkUtf8(value: string) {
+function chunkUtf8(
+  value: string,
+  maxBytes = MAX_WORKSPACE_BYTES,
+  tooLargeMessage = '云端工作区超过 24 MB，请删除或压缩较大的图片后重试。',
+) {
   const bytes = encoder.encode(value)
-  if (bytes.byteLength > MAX_WORKSPACE_BYTES)
-    throw new ApiError(413, '云端工作区超过 24 MB，请删除或压缩较大的图片后重试。')
+  if (bytes.byteLength > maxBytes) throw new ApiError(413, tooLargeMessage)
   const chunks: string[] = []
   for (let offset = 0; offset < bytes.length; ) {
     let end = Math.min(offset + CHUNK_BYTES, bytes.length)
@@ -262,6 +275,115 @@ function chunkUtf8(value: string) {
     offset = end
   }
   return chunks
+}
+
+function validatePublicShare(value: unknown) {
+  if (!value || typeof value !== 'object') throw new ApiError(400, '分享内容格式不正确。')
+  const body = value as Record<string, unknown>
+  if (typeof body.noteId !== 'string' || !body.noteId || body.noteId.length > 200)
+    throw new ApiError(400, '分享笔记 ID 不正确。')
+  if (typeof body.title !== 'string' || body.title.length > 500)
+    throw new ApiError(400, '分享标题不正确。')
+  if (typeof body.html !== 'string' || body.html.length > 2_000_000)
+    throw new ApiError(400, '分享正文不正确。')
+  if (/data:image\//i.test(body.html))
+    throw new ApiError(422, '请先将笔记中的本地图片上传到 R2 再分享。')
+  if (
+    !Array.isArray(body.tags) ||
+    body.tags.length > 20 ||
+    body.tags.some((tag) => typeof tag !== 'string' || tag.length > 50)
+  )
+    throw new ApiError(400, '分享标签不正确。')
+  return {
+    noteId: body.noteId,
+    title: body.title,
+    html: body.html,
+    tags: body.tags as string[],
+  }
+}
+
+async function publishShare(request: Request, user: SessionUser, env: Env) {
+  const input = validatePublicShare(await readJson(request, MAX_SHARE_BYTES + 32_768))
+  const existing = await env.DB.prepare(
+    'SELECT id FROM public_shares WHERE user_id = ? AND note_id = ?',
+  )
+    .bind(user.id, input.noteId)
+    .first<{ id: string }>()
+  const id = existing?.id ?? toBase64Url(crypto.getRandomValues(new Uint8Array(24)))
+  const chunks = chunkUtf8(
+    input.html,
+    MAX_SHARE_BYTES,
+    '公开文章内容过大，请精简后重试。',
+  )
+  const now = Date.now()
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare(
+      'INSERT INTO public_shares (id, user_id, note_id, title, tags_json, chunk_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, note_id) DO UPDATE SET title = excluded.title, tags_json = excluded.tags_json, chunk_count = excluded.chunk_count, updated_at = excluded.updated_at',
+    ).bind(
+      id,
+      user.id,
+      input.noteId,
+      input.title,
+      JSON.stringify(input.tags),
+      chunks.length,
+      now,
+      now,
+    ),
+    env.DB.prepare('DELETE FROM public_share_chunks WHERE share_id = ?').bind(id),
+    ...chunks.map((content, index) =>
+      env.DB.prepare(
+        'INSERT INTO public_share_chunks (share_id, chunk_index, content) VALUES (?, ?, ?)',
+      ).bind(id, index, content),
+    ),
+  ]
+  await env.DB.batch(statements)
+  return json({ id, updatedAt: now }, existing ? 200 : 201)
+}
+
+async function getPublicShare(id: string, env: Env) {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(id)) throw new ApiError(404, '分享文章不存在。')
+  const meta = await env.DB.prepare(
+    'SELECT id, title, tags_json, chunk_count, created_at, updated_at FROM public_shares WHERE id = ?',
+  )
+    .bind(id)
+    .first<PublicShareMeta>()
+  if (!meta) throw new ApiError(404, '分享文章不存在或已停止分享。')
+  const result = await env.DB.prepare(
+    'SELECT content FROM public_share_chunks WHERE share_id = ? ORDER BY chunk_index ASC',
+  )
+    .bind(id)
+    .all<{ content: string }>()
+  if (result.results.length !== meta.chunk_count)
+    throw new ApiError(500, '分享文章数据不完整，请稍后重试。')
+  let tags: string[] = []
+  try {
+    const parsed = JSON.parse(meta.tags_json)
+    if (Array.isArray(parsed)) tags = parsed.filter((tag): tag is string => typeof tag === 'string')
+  } catch {
+    /* Invalid legacy metadata is treated as no tags. */
+  }
+  return json({
+    id: meta.id,
+    title: meta.title,
+    html: result.results.map((row) => row.content).join(''),
+    tags,
+    createdAt: meta.created_at,
+    updatedAt: meta.updated_at,
+  })
+}
+
+async function revokeShare(id: string, user: SessionUser, env: Env) {
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(id)) throw new ApiError(404, '分享文章不存在。')
+  const owned = await env.DB.prepare(
+    'SELECT id FROM public_shares WHERE id = ? AND user_id = ?',
+  )
+    .bind(id, user.id)
+    .first<{ id: string }>()
+  if (!owned) throw new ApiError(404, '分享文章不存在。')
+  await env.DB.prepare('DELETE FROM public_shares WHERE id = ? AND user_id = ?')
+    .bind(id, user.id)
+    .run()
+  return json({ ok: true })
 }
 
 async function register(request: Request, env: Env) {
@@ -471,6 +593,8 @@ async function route(request: Request, env: Env, ctx: ExecutionContext) {
     return json({ ok: true, service: 'orion-note-learn-sync' })
   const imageMatch = path.match(/^\/v1\/images\/([A-Za-z0-9_-]+)$/)
   if (request.method === 'GET' && imageMatch) return getImage(imageMatch[1], env)
+  const shareMatch = path.match(/^\/v1\/shares\/([A-Za-z0-9_-]+)$/)
+  if (request.method === 'GET' && shareMatch) return getPublicShare(shareMatch[1], env)
   if (request.method === 'POST' && path === '/v1/auth/register') return register(request, env)
   if (request.method === 'POST' && path === '/v1/auth/login') return login(request, env)
 
@@ -482,6 +606,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext) {
   }
   if (request.method === 'POST' && path === '/v1/images')
     return uploadImage(request, session.user, env)
+  if (request.method === 'POST' && path === '/v1/shares')
+    return publishShare(request, session.user, env)
+  if (request.method === 'DELETE' && shareMatch)
+    return revokeShare(shareMatch[1], session.user, env)
   if (request.method === 'GET' && path === '/v1/workspace')
     return getWorkspace(session.user, env)
   if (request.method === 'PUT' && path === '/v1/workspace')
@@ -559,6 +687,19 @@ const englishErrors: Record<string, string> = {
     'Upload local note images to R2 before syncing.',
   '云端工作区超过 24 MB，请删除或压缩较大的图片后重试。':
     'The cloud workspace exceeds 24 MB. Remove or compress large images and try again.',
+  '分享内容格式不正确。': 'The shared note payload is invalid.',
+  '分享笔记 ID 不正确。': 'The shared note ID is invalid.',
+  '分享标题不正确。': 'The shared note title is invalid.',
+  '分享正文不正确。': 'The shared note content is invalid.',
+  '分享标签不正确。': 'The shared note tags are invalid.',
+  '请先将笔记中的本地图片上传到 R2 再分享。':
+    'Upload local note images to R2 before sharing.',
+  '公开文章内容过大，请精简后重试。':
+    'The public article is too large. Shorten it and try again.',
+  '分享文章不存在。': 'The shared article does not exist.',
+  '分享文章不存在或已停止分享。': 'The shared article does not exist or is no longer shared.',
+  '分享文章数据不完整，请稍后重试。':
+    'The shared article is incomplete. Please try again later.',
   '接口不存在。': 'Endpoint not found.',
   '不允许的请求来源。': 'This request origin is not allowed.',
 }
