@@ -170,6 +170,15 @@ svg {
   margin-bottom: 18px;
   font-size: 13px;
   font-weight: 600;
+  width: 100%;
+  text-align: left;
+}
+.workspace-label:hover {
+  background: #eef2e9;
+}
+.workspace-label > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
 }
 .workspace-label > svg {
   margin-left: auto;
@@ -181,6 +190,9 @@ svg {
   font-weight: 400;
   color: var(--muted);
   margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .workspace-avatar {
   display: grid;
@@ -424,6 +436,10 @@ svg {
   height: 5px;
   border-radius: 50%;
   background: #92a684;
+}
+.local-footer > span.connected {
+  background: #5e9867;
+  box-shadow: 0 0 0 3px #dfead9;
 }
 .main-shell {
   margin-left: 236px;
@@ -1653,6 +1669,77 @@ svg {
   color: #9aa78b;
   margin: 0;
   line-height: 1.7;
+}
+.account-hero {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 22px;
+}
+.account-hero h3 {
+  margin: 0 0 6px;
+  color: #425a48;
+  font-size: 15px;
+  font-weight: 600;
+}
+.account-hero p {
+  margin: 0;
+  color: #919e8d;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+  background: #f2f5ef;
+}
+.auth-tabs button {
+  padding: 9px 12px;
+  border-radius: 6px;
+  color: #8b9788;
+  font-size: 12px;
+}
+.auth-tabs button.selected {
+  color: var(--green);
+  background: #fff;
+  box-shadow: 0 1px 4px #33472d12;
+  font-weight: 600;
+}
+.sync-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 15px;
+  margin-bottom: 16px;
+  border: 1px solid #e4eade;
+  border-radius: 9px;
+  background: #fafbf8;
+}
+.sync-card strong,
+.sync-card span {
+  display: block;
+}
+.sync-card strong {
+  margin-bottom: 5px;
+  color: #53664f;
+  font-size: 13px;
+}
+.sync-card span {
+  color: #9aa493;
+  font-size: 12px;
+}
+.sync-card > .connection-dot {
+  width: 8px;
+  height: 8px;
+}
+.account-actions {
+  justify-content: flex-end;
 }
 .privacy-note {
   background: #f3f7ed;

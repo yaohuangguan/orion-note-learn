@@ -89,15 +89,19 @@ function mathPasteSlice(schema: Schema, value: string) {
 export default function NoteEditor({
   html,
   onChange,
+  onImageUpload,
 }: {
   html: string
   onChange: (html: string) => void
+  onImageUpload?: (image: File) => Promise<string>
 }) {
   const callback = useRef(onChange)
+  const imageUpload = useRef(onImageUpload)
   const editorRef = useRef<Editor | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
   const [message, setMessage] = useState('')
   callback.current = onChange
+  imageUpload.current = onImageUpload
 
   const showMessage = (value: string) => {
     setMessage(value)
@@ -115,13 +119,28 @@ export default function NoteEditor({
       return
     }
     try {
-      const src = await readImage(file)
+      if (imageUpload.current) showMessage('正在把图片安全上传到云端…')
+      const src = imageUpload.current ? await imageUpload.current(file) : await readImage(file)
       currentEditor
         .chain()
         .focus()
         .setImage({ src, alt: file.name || '粘贴的图片' })
         .run()
     } catch {
+      if (imageUpload.current) {
+        try {
+          const src = await readImage(file)
+          currentEditor
+            .chain()
+            .focus()
+            .setImage({ src, alt: file.name || '粘贴的图片' })
+            .run()
+          showMessage('云端暂时不可用，图片已保存在本机，联网后会继续上传。')
+          return
+        } catch {
+          /* Fall through to the shared error. */
+        }
+      }
       showMessage('图片读取失败，请换一张图片重试。')
     }
   }
@@ -147,7 +166,7 @@ export default function NoteEditor({
         link: { openOnClick: false, protocols: ['https', 'http', 'mailto'] },
       }),
       Highlight,
-      Image.configure({ allowBase64: true }),
+      Image.configure({ allowBase64: true, HTMLAttributes: { crossorigin: 'anonymous' } }),
       Mathematics.configure({
         katexOptions: { throwOnError: false, strict: false },
         inlineOptions: { onClick: (node, pos) => editMath('inline', node, pos) },

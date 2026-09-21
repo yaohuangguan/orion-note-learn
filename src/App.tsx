@@ -24,6 +24,7 @@ import {
   Type,
   X,
   RotateCcw,
+  Cloud,
   CloudOff,
   LoaderCircle,
   Leaf,
@@ -50,13 +51,30 @@ import {
 import NoteEditor from './components/Editor'
 import { Modal } from './components/Modal'
 import Settings from './components/Settings'
+import Account from './components/Account'
 import Review from './components/Review'
 import { exportMarkdown, exportPlainText, exportPDF } from './export'
+import {
+  authenticateCloud,
+  clearCloudSession,
+  cloudApiUrl,
+  endCloudSession,
+  fetchCloudWorkspace,
+  loadCloudSession,
+  mergeWorkspaces,
+  migrateWorkspaceImages,
+  saveCloudWorkspace,
+  uploadCloudImage,
+  verifyCloudSession,
+  type CloudSession,
+  CloudApiError,
+} from './cloud'
 
 const Drawing = lazy(() => import('./components/Drawing'))
 const AIPanel = lazy(() => import('./components/AIPanel'))
 type View = 'editor' | 'library' | 'review' | 'trash'
-type Dialog = 'settings' | 'folder' | 'card' | 'import' | 'properties' | null
+type Dialog = 'settings' | 'account' | 'folder' | 'card' | 'import' | 'properties' | null
+type CloudState = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'unavailable'
 function initialSettings(): AISettings {
   const p = providers[0]
   try {
@@ -82,6 +100,17 @@ export default function App() {
   const [loadError, setLoadError] = useState('')
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error'>('saving')
   const revision = useRef(0)
+  const [cloudSession, setCloudSession] = useState<CloudSession | null>(loadCloudSession)
+  const [cloudState, setCloudState] = useState<CloudState>(
+    cloudApiUrl() ? 'idle' : 'unavailable',
+  )
+  const [cloudLastSynced, setCloudLastSynced] = useState<number | null>(null)
+  const cloudRevision = useRef<number | null>(null)
+  const cloudReadyFor = useRef('')
+  const cloudConnectingFor = useRef('')
+  const cloudUploadInFlight = useRef(false)
+  const cloudPendingWorkspace = useRef<Workspace | null>(null)
+  const cloudLastPushed = useRef<Workspace | null>(null)
   const [selectedId, setSelectedId] = useState('welcome')
   const [view, setView] = useState<View>('editor')
   const [folder, setFolder] = useState('')
@@ -122,6 +151,95 @@ export default function App() {
     .sort((a, b) => b.updatedAt - a.updatedAt)
   const allFolders = [...new Set([...(data?.folders || []), ...active.map((n) => n.folder)])]
   const notify = useCallback((message: string) => setToast(message), [])
+
+  async function syncCloudSnapshot(workspace: Workspace, session: CloudSession) {
+    if (cloudUploadInFlight.current) {
+      cloudPendingWorkspace.current = workspace
+      return
+    }
+    cloudUploadInFlight.current = true
+    cloudPendingWorkspace.current = null
+    setCloudState('syncing')
+    try {
+      const prepared = await migrateWorkspaceImages(workspace, session)
+      const snapshot = prepared.workspace
+      const result = await saveCloudWorkspace(session, snapshot, cloudRevision.current)
+      cloudRevision.current = result.revision
+      cloudLastPushed.current = snapshot
+      if (prepared.changed) setData(snapshot)
+      setCloudLastSynced(result.updatedAt)
+      setCloudState('synced')
+    } catch (error) {
+      if (error instanceof CloudApiError && error.status === 409) {
+        const remote = await fetchCloudWorkspace(session)
+        if (remote.workspace) {
+          cloudRevision.current = remote.revision
+          const merged = sanitizeWorkspace(mergeWorkspaces(workspace, remote.workspace))
+          setData(merged)
+          setCloudState('syncing')
+          notify('检测到另一台设备的修改，已安全合并并继续同步')
+          return
+        }
+      }
+      if (error instanceof CloudApiError && error.status === 401) {
+        clearCloudSession()
+        cloudReadyFor.current = ''
+        setCloudSession(null)
+        setCloudState('idle')
+        notify('云端登录已过期，请重新登录')
+        return
+      }
+      setCloudState('error')
+      notify(error instanceof Error ? error.message : '云同步失败，本地笔记仍已保存')
+      throw error
+    } finally {
+      cloudUploadInFlight.current = false
+      const pending = cloudPendingWorkspace.current
+      cloudPendingWorkspace.current = null
+      if (pending && pending !== workspace)
+        void syncCloudSnapshot(pending, session).catch(() => {})
+    }
+  }
+
+  async function connectCloud(session: CloudSession, workspace: Workspace) {
+    if (
+      cloudReadyFor.current === session.token ||
+      cloudConnectingFor.current === session.token
+    )
+      return
+    cloudConnectingFor.current = session.token
+    setCloudState('checking')
+    try {
+      const verified = await verifyCloudSession(session)
+      setCloudSession(verified)
+      const remote = await fetchCloudWorkspace(verified)
+      cloudRevision.current = remote.revision
+      cloudReadyFor.current = verified.token
+      if (!remote.workspace) {
+        await syncCloudSnapshot(workspace, verified)
+        notify('云同步已开启，这台设备的笔记已上传')
+        return
+      }
+      const merged = sanitizeWorkspace(mergeWorkspaces(workspace, remote.workspace))
+      cloudLastPushed.current = remote.workspace
+      setCloudLastSynced(remote.updatedAt)
+      setCloudState('synced')
+      if (JSON.stringify(merged) !== JSON.stringify(workspace)) setData(merged)
+      if (JSON.stringify(merged) !== JSON.stringify(remote.workspace))
+        notify('本机与云端笔记已合并，正在上传最新版本')
+    } catch (error) {
+      if (error instanceof CloudApiError && error.status === 401) {
+        clearCloudSession()
+        setCloudSession(null)
+        setCloudState('idle')
+      } else {
+        setCloudState('error')
+      }
+    } finally {
+      cloudConnectingFor.current = ''
+    }
+  }
+
   useEffect(() => {
     let live = true
     loadWorkspace()
@@ -148,6 +266,18 @@ export default function App() {
         if (revision.current === current) setSaveState('error')
       })
   }, [data])
+  useEffect(() => {
+    if (!data || !cloudSession || !cloudApiUrl()) return
+    void connectCloud(cloudSession, data)
+  }, [data, cloudSession?.token])
+  useEffect(() => {
+    if (!data || !cloudSession || cloudReadyFor.current !== cloudSession.token) return
+    if (data === cloudLastPushed.current) return
+    const timer = window.setTimeout(() => {
+      void syncCloudSnapshot(data, cloudSession).catch(() => {})
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [data, cloudSession?.token])
   useEffect(() => {
     if (!toast) return
     const id = setTimeout(() => setToast(''), 4000)
@@ -309,6 +439,41 @@ export default function App() {
     )
     notify('AI 结果已追加到笔记末尾')
   }
+  async function authenticateAccount(
+    mode: 'login' | 'register',
+    email: string,
+    password: string,
+  ) {
+    const session = await authenticateCloud(mode, email, password)
+    cloudReadyFor.current = ''
+    cloudLastPushed.current = null
+    setCloudSession(session)
+    await connectCloud(session, data!)
+    notify(mode === 'register' ? '账户已创建，笔记正在上传云端' : '登录成功，笔记已连接云端')
+  }
+  async function syncNow() {
+    if (!cloudSession || !data) return
+    if (cloudReadyFor.current !== cloudSession.token) {
+      await connectCloud(cloudSession, data)
+      return
+    }
+    await syncCloudSnapshot(data, cloudSession)
+    notify('云端同步已完成')
+  }
+  async function logoutAccount() {
+    if (!cloudSession) return
+    try {
+      await endCloudSession(cloudSession)
+    } catch {
+      /* Local logout still completes if the network is unavailable. */
+    }
+    cloudReadyFor.current = ''
+    cloudRevision.current = null
+    cloudLastPushed.current = null
+    setCloudSession(null)
+    setCloudState(cloudApiUrl() ? 'idle' : 'unavailable')
+    notify('已退出云端账户，本机笔记仍然保留')
+  }
   if (loadError)
     return (
       <div className="app-loading">
@@ -365,13 +530,27 @@ export default function App() {
             <PanelLeftClose size={17} />
           </button>
         </div>
-        <div className="workspace-label">
+        <button
+          type="button"
+          className="workspace-label"
+          aria-label="账户与云同步"
+          onClick={() => setDialog('account')}
+        >
           <span className="workspace-avatar">O</span>
           <span>
-            我的学习空间<small>个人工作区</small>
+            我的学习空间
+            <small>
+              {cloudSession
+                ? cloudState === 'checking' || cloudState === 'syncing'
+                  ? '正在同步…'
+                  : cloudState === 'error'
+                    ? '本地已保存 · 等待同步'
+                    : cloudSession.user.email
+                : '登录后跨设备同步'}
+            </small>
           </span>
-          <CloudOff size={15} />
-        </div>
+          {cloudSession && cloudState !== 'error' ? <Cloud size={15} /> : <CloudOff size={15} />}
+        </button>
         <label className="search-box">
           <Search size={16} />
           <input
@@ -481,8 +660,8 @@ export default function App() {
             <span className={`connection-dot ${settings.apiKey ? 'connected' : ''}`} />
           </button>
           <div className="local-footer">
-            <span />
-            数据保存在此设备
+            <span className={cloudSession && cloudState === 'synced' ? 'connected' : ''} />
+            {cloudSession ? '本地优先 · 云端同步' : '数据保存在此设备'}
           </div>
         </div>
       </aside>
@@ -658,6 +837,11 @@ export default function App() {
                         key={note.id}
                         html={note.html}
                         onChange={(html) => updateNote(note.id, { html })}
+                        onImageUpload={
+                          cloudSession
+                            ? async (image) => (await uploadCloudImage(cloudSession, image)).src
+                            : undefined
+                        }
                       />
                     ) : (
                       <Drawing
@@ -877,6 +1061,17 @@ export default function App() {
             }
             notify('设置已更新，密钥仅保留在本次打开的页面中')
           }}
+          onClose={() => setDialog(null)}
+        />
+      ) : null}
+      {dialog === 'account' ? (
+        <Account
+          session={cloudSession}
+          syncState={cloudState}
+          lastSynced={cloudLastSynced}
+          onAuthenticate={authenticateAccount}
+          onSync={syncNow}
+          onLogout={logoutAccount}
           onClose={() => setDialog(null)}
         />
       ) : null}

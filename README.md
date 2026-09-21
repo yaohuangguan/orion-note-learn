@@ -15,6 +15,7 @@ Orion 是一款本地优先的开源笔记与学习工具，把富文本、手�
 - 自带 API Key：DeepSeek、OpenAI、OpenRouter，以及管理员允许的 OpenAI 兼容 HTTPS 接口。
 - 手动制作闪卡、答案翻面、自评掌握程度、持久化复习时间。再想一想：10 分钟；基本掌握：至少 1 天并逐步翻倍；很有把握：至少 4 天并逐步增加。
 - IndexedDB 自动保存，明确的保存状态与失败提示。
+- 可选账户与跨设备云同步：Cloudflare Worker + D1 保存笔记数据，R2 保存粘贴图片；离线时继续本地写作。
 - PDF 下载（包括中文及手写内容）、Markdown、TXT、SVG，以及完整 JSON 备份与恢复。
 - 响应式布局、键盘操作、原生模态框与触摸操作。
 
@@ -29,7 +30,7 @@ npm ci
 npm run dev
 ```
 
-打开 **http://localhost:5173**。Vite 将 `/api` 转发到本机的 AI 服务（默认端口 3001）。不配置密钥也可以编辑笔记、手写、导出、手动制作闪卡及复习。
+首次启动云服务前运行 npm run cloud:migrate:local。打开 **http://localhost:5173**；开发命令会同时启动 Vite、AI 服务和本地 Worker。不配置密钥或云账户也可以编辑笔记、手写、导出、手动制作闪卡及复习。
 
 在「设置」中选择服务商，填写模型 ID 与 API Key。密钥仅保留在页面内存，刷新后重新输入。模型 ID 可编辑，以服务商实际提供的模型为准。
 
@@ -46,20 +47,21 @@ npm run build
 npm start
 ```
 
-打开 **http://127.0.0.1:3001**。服务器同时提供静态前端与 AI 转发。可将 `.env.example` 复制为 `.env` 配置 `HOST`、`PORT`。所有笔记仍保存在用户的浏览器中，服务端不存笔记。
+打开 **http://127.0.0.1:3001**。服务器同时提供静态前端与 AI 转发。可将 `.env.example` 复制为 `.env` 配置 `HOST`、`PORT`。未登录时数据只在浏览器中；配置并登录 Cloudflare 同步服务后，笔记会同时保存到云端。
 
-公开部署时请在反向代理配置 HTTPS、访问控制和按用户/IP 限流。本版本没有账户登录与多租户权限层，适合个人自托管或可信网络。服务端有基础来源检查、请求大小上限、并发上限、超时和目标域名白名单，不能替代公开服务的访问控制。
+Vercel 前端配合 Cloudflare Worker、D1 和 R2 的完整部署步骤见 [Cloudflare 云同步部署](docs/cloud-deploy.md)。前端和同步 API 可以独立部署，Wrangler 会直接构建 Worker，无需上传 Vite 的 dist。
 
 ## 数据与隐私
 
-- 笔记、笔迹、闪卡和复习时间位于当前浏览器的 IndexedDB。清理网站数据、浏览器重置或设备故障可能导致丢失，请定期导出备份。
-- 本版本**不提供自动云同步、协同编辑或账号系统**。使用完整 JSON 备份在设备之间迁移；导入会创建副本，保留已有数据。
+- 笔记、笔迹、闪卡和复习时间始终先写入当前浏览器的 IndexedDB。登录后，工作区自动同步到 D1，图片上传到私有 R2 bucket。
+- 未登录、断网或云服务不可用时，本地编辑不受影响；恢复连接后继续同步。当前提供单用户工作区同步，不提供多人实时协作。
 - API Key 不写入 localStorage、sessionStorage、数据库、备份或日志。服务商、接口地址和模型偏好可保存在 localStorage。
 - 只有点击 AI 功能时，当前笔记文字才会经此项目的服务器转发给选定服务商；手写画板不会发送，也暂不提供手写 OCR。
 - AI 可能生成错误内容，请核对原始资料。网络请求有取消与超时处理。
 - PDF 下载为分块渲染的图像型 PDF，保留中文外观与手写图形，文本不能选择。需要可选择的文字时，可使用「打印 / 保存为 PDF」或导出 Markdown / TXT。超长单个段落的分页可能发生在行中；推荐用小段落组织笔记。
 - Markdown/TXT 不含画板内容；完整备份和下载 PDF 包含画板，SVG 可单独导出。
 - 当前使用单页会话保存工作区，请避免在多个标签页同时修改同一工作区。
+- 多设备同时修改时使用云端版本号检测冲突，并按笔记更新时间合并；仍建议在重要整理前导出备份。
 - 支持鼠标、触摸和 Pointer Events 触笔；画笔粗细固定可调，本版本不根据压力动态调整线宽。
 
 ### 自定义 AI 接口
@@ -103,10 +105,13 @@ src/
 server/
   index.ts                Express 入口
   policy.ts               AI 参数和目标地址规则
+worker/
+  index.ts                账户、D1 同步与 R2 图片 API
+  migrations/             D1 数据库迁移
 tests/                    单元测试与浏览器回归
 ```
 
-React + TypeScript + Vite · Tiptap · IndexedDB · Express · jsPDF · Playwright。
+React + TypeScript + Vite · Tiptap · IndexedDB · Express · Cloudflare Workers / D1 / R2 · jsPDF · Playwright。
 
 开发参考：[Tiptap React](https://tiptap.dev/docs/editor/getting-started/install/react)、[Vite](https://vite.dev/guide/)、[DeepSeek Chat Completions](https://api-docs.deepseek.com/api/create-chat-completion/)。
 

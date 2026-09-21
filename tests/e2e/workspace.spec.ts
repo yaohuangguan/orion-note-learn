@@ -105,6 +105,76 @@ test('pasted images and LaTeX formulas render and persist', async ({ page }) => 
     /^data:image\/png;base64,/,
   )
 })
+test('account sync restores notes and R2 images on another device', async ({ page, browser }) => {
+  const email = `cloud-${Date.now()}@example.com`
+  const password = 'test-password-123'
+  await ready(page)
+  await page.getByRole('button', { name: '账户与云同步' }).click()
+  const account = page.getByRole('dialog', { name: '登录 Orion Note Learn' })
+  await account.getByRole('tab', { name: '注册' }).click()
+  await account.getByLabel('邮箱').fill(email)
+  await account.getByLabel('密码').fill(password)
+  await account.getByRole('button', { name: '创建账户' }).click()
+  await expect(page.getByRole('dialog', { name: '账户与云同步' })).toContainText('已连接云端')
+  await page.getByRole('button', { name: '关闭弹窗' }).click()
+
+  await page.getByRole('button', { name: '新建笔记', exact: false }).first().click()
+  await page.getByLabel('笔记标题', { exact: true }).fill('跨设备 R2 图片')
+  const editor = page.getByRole('textbox', { name: '笔记正文' })
+  await editor.fill('这篇笔记来自第一台设备。')
+  await editor.click()
+  await page.evaluate(() => {
+    const base64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+    const data = new DataTransfer()
+    data.items.add(new File([bytes], 'cloud.png', { type: 'image/png' }))
+    document.querySelector<HTMLElement>('[contenteditable="true"]')?.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+    )
+  })
+  await expect(page.getByRole('img', { name: 'cloud.png' })).toHaveAttribute(
+    'src',
+    /^http:\/\/localhost:8787\/v1\/images\//,
+  )
+  await expect
+    .poll(
+      () =>
+        page.evaluate(async () => {
+          const session = JSON.parse(localStorage.getItem('orion-cloud-session') || 'null')
+          const response = await fetch('http://localhost:8787/v1/workspace', {
+            headers: { Authorization: `Bearer ${session.token}` },
+          })
+          const remote = await response.json()
+          const note = remote.workspace?.notes?.find(
+            (item: { title?: string }) => item.title === '跨设备 R2 图片',
+          )
+          return note?.html || ''
+        }),
+      { timeout: 15000 },
+    )
+    .toMatch(/http:\/\/localhost:8787\/v1\/images\//)
+
+  const secondContext = await browser.newContext()
+  const second = await secondContext.newPage()
+  await ready(second)
+  await second.getByRole('button', { name: '账户与云同步' }).click()
+  const login = second.getByRole('dialog', { name: '登录 Orion Note Learn' })
+  await login.getByLabel('邮箱').fill(email)
+  await login.getByLabel('密码').fill(password)
+  await login.getByRole('button', { name: '登录并同步' }).click()
+  await expect(second.getByRole('button', { name: '跨设备 R2 图片', exact: true })).toBeVisible()
+  await second.getByRole('button', { name: '关闭弹窗' }).click()
+  await second.getByRole('button', { name: '跨设备 R2 图片', exact: true }).click()
+  await expect(second.getByRole('textbox', { name: '笔记正文' })).toContainText(
+    '这篇笔记来自第一台设备。',
+  )
+  await expect(second.getByRole('img', { name: 'cloud.png' })).toHaveAttribute(
+    'src',
+    /^http:\/\/localhost:8787\/v1\/images\//,
+  )
+  await secondContext.close()
+})
 test('handwriting supports strokes, undo, redo and reload', async ({ page }) => {
   await ready(page)
   await page.getByRole('tab', { name: '手写画板' }).click()

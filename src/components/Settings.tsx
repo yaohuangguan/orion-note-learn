@@ -90,7 +90,8 @@ export default function Settings({
           </p>
         </div>
         <p className="field-help">
-          笔记保存在当前浏览器。清理浏览器数据会删除笔记，请定期导出备份。不同设备可通过备份文件迁移，当前版本不提供云同步。
+          笔记始终先保存在当前浏览器。登录云账户后，笔记数据同步到 D1，粘贴图片存入
+          R2；建议仍定期导出完整备份。
         </p>
         <div className="modal-actions">
           <a

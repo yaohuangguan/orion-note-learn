@@ -136,6 +136,7 @@ export async function exportPDF(note: Note) {
           scale: 1.8,
           backgroundColor: '#ffffff',
           logging: false,
+          useCORS: true,
           width: 760,
           height: Math.min(maxTile, total - offset),
           y: offset,
