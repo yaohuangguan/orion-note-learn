@@ -15,6 +15,15 @@ export type RemoteWorkspace = {
   updatedAt: number | null
 }
 
+export type PublicShare = {
+  id: string
+  title: string
+  html: string
+  tags: string[]
+  createdAt: number
+  updatedAt: number
+}
+
 export class CloudApiError extends Error {
   constructor(
     message: string,
@@ -164,6 +173,34 @@ export async function saveCloudWorkspace(
       method: 'PUT',
       body: JSON.stringify({ workspace, baseRevision }),
     },
+    session,
+  )
+}
+
+export async function publishPublicShare(session: CloudSession, note: Note) {
+  return request<{ id: string; updatedAt: number }>(
+    '/v1/shares',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        noteId: note.id,
+        title: note.title,
+        html: note.html,
+        tags: note.tags,
+      }),
+    },
+    session,
+  )
+}
+
+export async function fetchPublicShare(id: string) {
+  return request<PublicShare>(`/v1/shares/${encodeURIComponent(id)}`, {}, null)
+}
+
+export async function revokePublicShare(session: CloudSession, id: string) {
+  return request<{ ok: true }>(
+    `/v1/shares/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
     session,
   )
 }
