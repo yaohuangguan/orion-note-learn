@@ -178,11 +178,13 @@ test('account sync restores notes and R2 images on another device', async ({ pag
 test('account registration submits browser-autofilled DOM values', async ({ page }) => {
   const email = `autofill-${Date.now()}@example.com`
   const password = 'autofill-password-123'
-  let registerBody: { email?: string; passwordProof?: string } | null = null
+  const captured = {
+    registerBody: null as { email?: string; passwordProof?: string } | null,
+  }
 
   await ready(page)
   await page.route('**/v1/auth/register', async (route) => {
-    registerBody = route.request().postDataJSON()
+    captured.registerBody = route.request().postDataJSON()
     await route.fulfill({
       status: 409,
       json: { error: 'This email is already registered. Sign in instead.' },
@@ -204,8 +206,8 @@ test('account registration submits browser-autofilled DOM values', async ({ page
 
   await account.getByRole('button', { name: '创建账户' }).click()
 
-  await expect.poll(() => registerBody?.email).toBe(email)
-  expect(registerBody?.passwordProof).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  await expect.poll(() => captured.registerBody?.email).toBe(email)
+  expect(captured.registerBody?.passwordProof).toMatch(/^[A-Za-z0-9_-]{43}$/)
 })
 
 test('English UI can be selected and persists after reload', async ({ page }) => {
