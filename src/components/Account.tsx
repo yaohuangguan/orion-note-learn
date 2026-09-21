@@ -47,9 +47,12 @@ export default function Account({
     }
   }
 
-  function submit(event: FormEvent) {
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    void run(() => onAuthenticate(mode, email, password))
+    const form = new FormData(event.currentTarget)
+    const submittedEmail = String(form.get('email') ?? '')
+    const submittedPassword = String(form.get('password') ?? '')
+    void run(() => onAuthenticate(mode, submittedEmail, submittedPassword))
   }
 
   if (session)
@@ -158,6 +161,7 @@ export default function Account({
               {pick('邮箱', 'Email')}
               <input
                 required
+                name="email"
                 type="email"
                 autoComplete="email"
                 maxLength={254}
@@ -170,6 +174,7 @@ export default function Account({
               {pick('密码', 'Password')}
               <input
                 required
+                name="password"
                 type="password"
                 minLength={10}
                 maxLength={128}
