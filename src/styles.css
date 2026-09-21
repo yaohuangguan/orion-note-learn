@@ -2681,7 +2681,7 @@ svg {
   grid-template-columns: auto 1fr auto;
   gap: 14px;
   align-items: center;
-  margin-top: 18px;
+  margin: 0 0 18px;
   padding: 18px 20px;
   border: 1px solid #e1e7dc;
   border-radius: 12px;

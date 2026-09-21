@@ -195,22 +195,6 @@ export default function SharedArticle({ shareId }: { shareId: string }) {
       </header>
 
       <main className="shared-article-shell">
-        <article className="shared-article">
-          <div className="shared-kicker">{pick('ORION · 分享文章', 'ORION · SHARED ARTICLE')}</div>
-          <h1>{share.title || pick('无标题笔记', 'Untitled note')}</h1>
-          <div className="shared-meta">
-            <span>{pick('更新于', 'Updated')} {new Date(share.updatedAt).toLocaleDateString(locale)}</span>
-            {share.tags.length ? (
-              <span className="shared-tags">
-                {share.tags.map((tag) => (
-                  <span key={tag}># {tag}</span>
-                ))}
-              </span>
-            ) : null}
-          </div>
-          <ReadonlyArticleBody html={share.html} />
-        </article>
-
         <aside className="shared-save-card">
           <div className="shared-save-icon">
             <BookmarkPlus size={22} />
@@ -240,6 +224,22 @@ export default function SharedArticle({ shareId }: { shareId: string }) {
             </button>
           )}
         </aside>
+
+        <article className="shared-article">
+          <div className="shared-kicker">{pick('ORION · 分享文章', 'ORION · SHARED ARTICLE')}</div>
+          <h1>{share.title || pick('无标题笔记', 'Untitled note')}</h1>
+          <div className="shared-meta">
+            <span>{pick('更新于', 'Updated')} {new Date(share.updatedAt).toLocaleDateString(locale)}</span>
+            {share.tags.length ? (
+              <span className="shared-tags">
+                {share.tags.map((tag) => (
+                  <span key={tag}># {tag}</span>
+                ))}
+              </span>
+            ) : null}
+          </div>
+          <ReadonlyArticleBody html={share.html} />
+        </article>
       </main>
 
       {authOpen ? (
