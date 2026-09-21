@@ -36,6 +36,20 @@ R2 bucket 默认保持私有，不需要开启 Public Development URL。浏览�
 
 ## 3. 初始化 D1 并部署 Worker
 
+先创建认证密钥。它不能写入 `wrangler.jsonc` 或提交到 Git：
+
+~~~bash
+npx wrangler secret put AUTH_PEPPER
+~~~
+
+按提示粘贴至少 32 个随机字符。可以先用下面的命令生成 32 字节随机值：
+
+~~~bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+~~~
+
+认证密钥设置完成后再迁移和部署：
+
 ~~~bash
 npm run cloud:migrate
 npm run cloud:deploy
@@ -72,7 +86,7 @@ vercel --prod
 
 ## 本地联调
 
-首次运行先初始化本地 D1：
+复制 `.dev.vars.example` 为 `.dev.vars`，将示例值替换为至少 32 个随机字符，然后初始化本地 D1：
 
 ~~~bash
 npm run cloud:migrate:local
@@ -99,7 +113,8 @@ npm run dev 会同时启动：
 
 ## 安全边界
 
-- 密码使用 PBKDF2-SHA-256、随机盐和 210,000 次迭代保存。
+- 密码在浏览器中使用 PBKDF2-SHA-256 完成 210,000 次推导；Worker 再使用 `AUTH_PEPPER` 做 HMAC-SHA-256，D1 只保存随机盐和 HMAC 校验值。
+- `AUTH_PEPPER` 只放在 Cloudflare Secret 中。更换它会使现有账户无法登录，因此应在密码管理器中备份。
 - 会话令牌只以 SHA-256 摘要存入 D1，浏览器保存原始令牌以保持登录。
 - 注册和登录按来源 IP 限制为每 10 分钟 10 次尝试。
 - R2 bucket 保持私有。图片通过 256 位随机能力地址读取；不要把私人图片 URL 发送给其他人。

@@ -1,9 +1,11 @@
 import type { Card, Note, Workspace } from './domain'
 import { workspaceSchema } from './domain'
 import { seedWorkspace } from './seed'
+import { currentLanguage } from './i18n'
 
 const SESSION_KEY = 'orion-cloud-session'
 const configuredUrl = (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/$/, '')
+const PASSWORD_ITERATIONS = 210_000
 
 export type CloudUser = { id: string; email: string }
 export type CloudSession = { token: string; user: CloudUser }
@@ -26,6 +28,10 @@ export class CloudApiError extends Error {
 export function cloudApiUrl() {
   if (configuredUrl) return configuredUrl
   return import.meta.env.DEV ? 'http://localhost:8787' : ''
+}
+
+function message(chinese: string, english: string) {
+  return currentLanguage() === 'zh' ? chinese : english
 }
 
 export function loadCloudSession(): CloudSession | null {
@@ -58,26 +64,37 @@ async function request<T>(
   session: CloudSession | null = loadCloudSession(),
 ) {
   const baseUrl = cloudApiUrl()
-  if (!baseUrl) throw new CloudApiError('尚未配置云同步服务地址。')
+  if (!baseUrl)
+    throw new CloudApiError(message('尚未配置云同步服务地址。', 'Cloud sync is not configured.'))
   let response: Response
   try {
     response = await fetch(`${baseUrl}${path}`, {
       ...init,
       headers: {
         ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        'Accept-Language': currentLanguage() === 'zh' ? 'zh-CN' : 'en',
         ...(session ? { Authorization: `Bearer ${session.token}` } : {}),
         ...init.headers,
       },
     })
   } catch {
-    throw new CloudApiError('暂时无法连接云同步服务，请检查网络后重试。')
+    throw new CloudApiError(
+      message(
+        '暂时无法连接云同步服务，请检查网络后重试。',
+        'Cloud sync could not be reached. Check your connection and try again.',
+      ),
+    )
   }
   const body = (await response.json().catch(() => ({}))) as {
     error?: string
     code?: string
   } & T
   if (!response.ok)
-    throw new CloudApiError(body.error || '云同步请求失败。', response.status, body.code)
+    throw new CloudApiError(
+      body.error || message('云同步请求失败。', 'Cloud sync request failed.'),
+      response.status,
+      body.code,
+    )
   return body
 }
 
@@ -86,9 +103,36 @@ export async function authenticateCloud(
   email: string,
   password: string,
 ) {
+  if (password.length < 10 || password.length > 128)
+    throw new CloudApiError(
+      message('密码需要 10–128 个字符。', 'Password must be 10–128 characters.'),
+      400,
+    )
+  const normalizedEmail = email.trim().toLocaleLowerCase('en-US')
+  const material = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits'],
+  )
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode(`orion-note-learn:${normalizedEmail}`),
+      iterations: PASSWORD_ITERATIONS,
+    },
+    material,
+    256,
+  )
+  const passwordProof = btoa(String.fromCharCode(...new Uint8Array(bits)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
   const session = await request<CloudSession>(`/v1/auth/${mode}`, {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email: normalizedEmail, passwordProof }),
   }, null)
   storeCloudSession(session)
   return session

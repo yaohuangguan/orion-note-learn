@@ -4,6 +4,7 @@ import { uid, type Stroke } from '../domain'
 import { download, safeName } from '../storage'
 
 import { strokePath, drawingSvg } from '../drawing-utils'
+import { useI18n } from '../i18n'
 const colors = ['#263d35', '#477c65', '#cd8854', '#5c7da7', '#ba6874']
 export default function Drawing({
   strokes,
@@ -14,6 +15,7 @@ export default function Drawing({
   onChange: (strokes: Stroke[]) => void
   title: string
 }) {
+  const { pick } = useI18n()
   const [color, setColor] = useState(colors[0])
   const [width, setWidth] = useState(3)
   const [tool, setTool] = useState<'pen' | 'eraser'>('pen')
@@ -88,10 +90,10 @@ export default function Drawing({
   }
   return (
     <div className="drawing-wrap">
-      <div className="drawing-toolbar" role="toolbar" aria-label="画板工具">
+      <div className="drawing-toolbar" role="toolbar" aria-label={pick('画板工具', 'Drawing tools')}>
         <button
           className={`icon-button ${tool === 'pen' ? 'active' : ''}`}
-          aria-label="画笔"
+          aria-label={pick('画笔', 'Pen')}
           aria-pressed={tool === 'pen'}
           onClick={() => setTool('pen')}
         >
@@ -99,8 +101,8 @@ export default function Drawing({
         </button>
         <button
           className={`icon-button ${tool === 'eraser' ? 'active' : ''}`}
-          aria-label="整笔橡皮擦"
-          title="整笔橡皮擦"
+          aria-label={pick('整笔橡皮擦', 'Stroke eraser')}
+          title={pick('整笔橡皮擦', 'Stroke eraser')}
           aria-pressed={tool === 'eraser'}
           onClick={() => setTool('eraser')}
         >
@@ -110,7 +112,7 @@ export default function Drawing({
         {colors.map((c) => (
           <button
             key={c}
-            aria-label={`墨水 ${c}`}
+            aria-label={`${pick('墨水', 'Ink')} ${c}`}
             aria-pressed={c === color}
             className={`ink-color ${c === color ? 'selected' : ''}`}
             style={{ background: c }}
@@ -121,9 +123,9 @@ export default function Drawing({
           />
         ))}
         <label className="pen-width">
-          粗细
+          {pick('粗细', 'Width')}
           <input
-            aria-label="画笔粗细"
+            aria-label={pick('画笔粗细', 'Pen width')}
             type="range"
             min="1"
             max="12"
@@ -134,7 +136,7 @@ export default function Drawing({
         <span className="toolbar-divider" />
         <button
           className="icon-button"
-          aria-label="撤销笔画"
+          aria-label={pick('撤销笔画', 'Undo stroke')}
           disabled={!history.length}
           onClick={() => {
             setRedo([...redo, strokes])
@@ -146,7 +148,7 @@ export default function Drawing({
         </button>
         <button
           className="icon-button"
-          aria-label="重做笔画"
+          aria-label={pick('重做笔画', 'Redo stroke')}
           disabled={!redo.length}
           onClick={() => {
             setHistory([...history, strokes])
@@ -159,16 +161,16 @@ export default function Drawing({
         <button
           className={`icon-button ${penOnly ? 'active' : ''}`}
           aria-pressed={penOnly}
-          title="仅触笔绘制（忽略手指）"
-          aria-label="仅触笔绘制"
+          title={pick('仅触笔绘制（忽略手指）', 'Stylus only (ignore touch)')}
+          aria-label={pick('仅触笔绘制', 'Stylus only')}
           onClick={() => setPenOnly(!penOnly)}
         >
           <Hand size={18} />
         </button>
         <button
           className="icon-button"
-          aria-label="下载手写 SVG"
-          title="下载 SVG"
+          aria-label={pick('下载手写 SVG', 'Download drawing as SVG')}
+          title={pick('下载 SVG', 'Download SVG')}
           onClick={() => download(drawingSvg(strokes), `${safeName(title)}.svg`, 'image/svg+xml')}
         >
           <Download size={18} />
@@ -179,7 +181,7 @@ export default function Drawing({
           ref={svg}
           viewBox="0 0 1200 900"
           role="img"
-          aria-label="手写画板"
+          aria-label={pick('手写画板', 'Drawing canvas')}
           onPointerDown={start}
           onPointerMove={move}
           onPointerUp={end}
@@ -208,14 +210,16 @@ export default function Drawing({
         {!strokes.length && !draft ? (
           <div className="drawing-hint">
             <PenTool size={28} />
-            <span>画出你的思路</span>
-            <small>触笔、手指或鼠标，都可以开始</small>
+            <span>{pick('画出你的思路', 'Draw your thinking')}</span>
+            <small>{pick('触笔、手指或鼠标，都可以开始', 'Start with a stylus, finger, or mouse')}</small>
           </div>
         ) : null}
       </div>
       <div className="drawing-foot">
-        <span>{strokes.length} 笔 · 自动保存</span>
-        <span>{penOnly ? '仅触笔模式 · 手指不会留下笔迹' : 'iPad 可开启仅触笔模式，减少误触'}</span>
+        <span>{pick(`${strokes.length} 笔 · 自动保存`, `${strokes.length} strokes · Autosaved`)}</span>
+        <span>{penOnly
+          ? pick('仅触笔模式 · 手指不会留下笔迹', 'Stylus only · Touch will not draw')
+          : pick('iPad 可开启仅触笔模式，减少误触', 'On iPad, enable stylus-only mode to prevent accidental marks')}</span>
       </div>
     </div>
   )

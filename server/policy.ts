@@ -8,6 +8,7 @@ export const requestSchema = z.object({
   title: z.string().max(500),
   content: z.string().min(1).max(60000),
   question: z.string().max(4000).optional(),
+  language: z.enum(['zh', 'en']).default('zh'),
 })
 export function completionUrl(baseUrl: string, extraHosts = '') {
   const url = new URL(baseUrl)
@@ -33,8 +34,20 @@ export function completionUrl(baseUrl: string, extraHosts = '') {
   url.pathname = `${url.pathname.replace(/\/+$/, '')}/chat/completions`
   return url.toString()
 }
-export function promptFor(task: z.infer<typeof requestSchema>['task'], question?: string) {
-  const tasks = {
+export function promptFor(
+  task: z.infer<typeof requestSchema>['task'],
+  question?: string,
+  language: 'zh' | 'en' = 'zh',
+) {
+  const tasks = language === 'en' ? {
+    summary:
+      'Summarize this note with its core ideas, knowledge structure, common points of confusion, and three review takeaways. Use concise Markdown.',
+    questions:
+      'Create five active-recall questions that progress from basic to advanced. List the questions first, followed by suggested answers and brief explanations. Use Markdown.',
+    cards:
+      'Create 5–8 useful Q&A flashcards. Return strict JSON only: {"cards":[{"question":"Question","answer":"Answer"}]}. Do not use code fences. Focus each card on one idea.',
+    chat: `Answer this study question using the note, explain concretely, and end with one question that encourages deeper thinking: ${question || 'Help me understand this note.'}`,
+  } : {
     summary:
       '总结当前笔记，包含：核心观点、知识结构、易混淆之处、三个复习要点。使用简洁 Markdown。',
     questions:

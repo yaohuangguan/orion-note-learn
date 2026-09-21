@@ -23,7 +23,8 @@ export default defineConfig({
       timeout: 60000,
     },
     {
-      command: 'npm run cloud:dev',
+      command:
+        'wrangler dev --local --port 8787 --var AUTH_PEPPER:orion-note-learn-playwright-only-pepper-2026',
       url: 'http://localhost:8787/health',
       reuseExistingServer: false,
       timeout: 60000,

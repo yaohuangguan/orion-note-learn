@@ -1,0 +1,2 @@
+# Copy to .dev.vars for local Worker development. Use a different random value in production.
+AUTH_PEPPER=replace-with-at-least-32-random-characters

@@ -69,6 +69,7 @@ import {
   type CloudSession,
   CloudApiError,
 } from './cloud'
+import { useI18n } from './i18n'
 
 const Drawing = lazy(() => import('./components/Drawing'))
 const AIPanel = lazy(() => import('./components/AIPanel'))
@@ -91,11 +92,12 @@ function initialSettings(): AISettings {
   }
   return { provider: p.id, baseUrl: p.baseUrl, model: p.model, apiKey: '' }
 }
-function date(value: number) {
-  return new Date(value).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+function date(value: number, locale: 'zh-CN' | 'en-US') {
+  return new Date(value).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
 }
 
 export default function App() {
+  const { locale, pick } = useI18n()
   const [data, setData] = useState<Workspace | null>(null)
   const [loadError, setLoadError] = useState('')
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error'>('saving')
@@ -177,7 +179,7 @@ export default function App() {
           const merged = sanitizeWorkspace(mergeWorkspaces(workspace, remote.workspace))
           setData(merged)
           setCloudState('syncing')
-          notify('检测到另一台设备的修改，已安全合并并继续同步')
+          notify(pick('检测到另一台设备的修改，已安全合并并继续同步', 'Changes from another device were merged safely. Syncing the latest version.'))
           return
         }
       }
@@ -186,11 +188,11 @@ export default function App() {
         cloudReadyFor.current = ''
         setCloudSession(null)
         setCloudState('idle')
-        notify('云端登录已过期，请重新登录')
+        notify(pick('云端登录已过期，请重新登录', 'Your cloud session expired. Sign in again.'))
         return
       }
       setCloudState('error')
-      notify(error instanceof Error ? error.message : '云同步失败，本地笔记仍已保存')
+      notify(error instanceof Error ? error.message : pick('云同步失败，本地笔记仍已保存', 'Cloud sync failed. Your notes are still saved locally.'))
       throw error
     } finally {
       cloudUploadInFlight.current = false
@@ -217,7 +219,7 @@ export default function App() {
       cloudReadyFor.current = verified.token
       if (!remote.workspace) {
         await syncCloudSnapshot(workspace, verified)
-        notify('云同步已开启，这台设备的笔记已上传')
+        notify(pick('云同步已开启，这台设备的笔记已上传', 'Cloud sync is on. Notes from this device were uploaded.'))
         return
       }
       const merged = sanitizeWorkspace(mergeWorkspaces(workspace, remote.workspace))
@@ -226,7 +228,7 @@ export default function App() {
       setCloudState('synced')
       if (JSON.stringify(merged) !== JSON.stringify(workspace)) setData(merged)
       if (JSON.stringify(merged) !== JSON.stringify(remote.workspace))
-        notify('本机与云端笔记已合并，正在上传最新版本')
+        notify(pick('本机与云端笔记已合并，正在上传最新版本', 'Local and cloud notes were merged. Uploading the latest version.'))
     } catch (error) {
       if (error instanceof CloudApiError && error.status === 401) {
         clearCloudSession()
@@ -248,7 +250,10 @@ export default function App() {
       })
       .catch(() => {
         if (live)
-          setLoadError('无法读取本地笔记。请确认浏览器允许使用存储，然后重新加载。原数据未被覆盖。')
+          setLoadError(pick(
+            '无法读取本地笔记。请确认浏览器允许使用存储，然后重新加载。原数据未被覆盖。',
+            'Local notes could not be read. Allow browser storage and reload. Your existing data was not overwritten.',
+          ))
       })
     return () => {
       live = false
@@ -329,14 +334,15 @@ export default function App() {
     setSidebarOpen(false)
   }
   function createNote() {
-    const n = newNote(folder || '我的笔记')
+    const n = newNote(folder || pick('我的笔记', 'My Notes'))
+    n.title = pick('无标题笔记', 'Untitled note')
     setData((d) => (d ? { ...d, notes: [n, ...d.notes] } : d))
     setSelectedId(n.id)
     setView('editor')
     setTab('text')
     setSearch('')
     setSidebarOpen(false)
-    notify('新笔记已创建，开始写下你的想法吧')
+    notify(pick('新笔记已创建，开始写下你的想法吧', 'New note created. Start writing your ideas.'))
   }
   function navigate(next: View, nextFolder = '', nextFavorites = false) {
     setView(next)
@@ -352,7 +358,7 @@ export default function App() {
         `orion-backup-${new Date().toISOString().slice(0, 10)}.json`,
         'application/json',
       )
-      notify('备份已导出，包含笔记、手写内容和复习进度')
+      notify(pick('备份已导出，包含笔记、手写内容和复习进度', 'Backup exported with notes, drawings, and review progress.'))
     }
   }
   async function importFile(e: ChangeEvent<HTMLInputElement>) {
@@ -361,7 +367,7 @@ export default function App() {
     setImportError('')
     setImporting(true)
     try {
-      if (file.size > 50 * 1024 * 1024) throw new Error('文件超过 50 MB，请分批导入。')
+      if (file.size > 50 * 1024 * 1024) throw new Error(pick('文件超过 50 MB，请分批导入。', 'The file is over 50 MB. Import it in smaller parts.'))
       const raw = await file.text()
       if (file.name.toLowerCase().endsWith('.json')) {
         const imported = sanitizeWorkspace(workspaceSchema.parse(JSON.parse(raw)))
@@ -379,10 +385,11 @@ export default function App() {
               }
             : d,
         )
-        notify(`已导入 ${notes.length} 篇笔记，原有笔记已保留`)
+        notify(pick(`已导入 ${notes.length} 篇笔记，原有笔记已保留`, `Imported ${notes.length} notes. Existing notes were kept.`))
       } else {
-        if (raw.length > 500000) throw new Error('单篇文本过长，请拆分后导入。')
-        const n = newNote(folder || '我的笔记')
+        if (raw.length > 500000) throw new Error(pick('单篇文本过长，请拆分后导入。', 'This document is too long. Split it before importing.'))
+        const n = newNote(folder || pick('我的笔记', 'My Notes'))
+        n.title = pick('无标题笔记', 'Untitled note')
         n.title = file.name.replace(/\.(md|markdown|txt)$/i, '').slice(0, 500)
         if (file.name.toLowerCase().endsWith('.txt')) {
           const div = document.createElement('div')
@@ -391,16 +398,16 @@ export default function App() {
         } else n.html = sanitizeHtml(await marked(raw))
         setData((d) => (d ? { ...d, notes: [n, ...d.notes] } : d))
         openNote(n)
-        notify('笔记已导入')
+        notify(pick('笔记已导入', 'Note imported.'))
       }
       setDialog(null)
     } catch (error) {
       setImportError(
         error instanceof SyntaxError
-          ? '文件不是有效的 JSON 备份。'
+          ? pick('文件不是有效的 JSON 备份。', 'This is not a valid JSON backup.')
           : error instanceof Error && error.name !== 'ZodError'
             ? error.message
-            : '备份格式不符合 Orion 规范，未导入任何数据。',
+            : pick('备份格式不符合 Orion 规范，未导入任何数据。', 'The backup does not match the Orion format. Nothing was imported.'),
       )
     } finally {
       setImporting(false)
@@ -412,16 +419,16 @@ export default function App() {
     setExporting(true)
     try {
       await exportPDF(note)
-      notify('PDF 已生成')
+      notify(pick('PDF 已生成', 'PDF created.'))
     } catch {
-      notify('PDF 生成失败，请重试，或使用浏览器打印保存为 PDF')
+      notify(pick('PDF 生成失败，请重试，或使用浏览器打印保存为 PDF', 'PDF creation failed. Try again or use the browser print dialog to save a PDF.'))
     } finally {
       setExporting(false)
     }
   }
   function addCards(cards: Card[]) {
     setData((d) => (d ? { ...d, cards: [...d.cards, ...cards] } : d))
-    notify(`已加入 ${cards.length} 张复习闪卡`)
+    notify(pick(`已加入 ${cards.length} 张复习闪卡`, `Added ${cards.length} flashcards to review.`))
   }
   async function appendAI(text: string, id: string) {
     const html = sanitizeHtml(await marked(text))
@@ -431,13 +438,13 @@ export default function App() {
             ...d,
             notes: d.notes.map((n) =>
               n.id === id
-                ? { ...n, html: `${n.html}<h2>AI 学习整理</h2>${html}`, updatedAt: Date.now() }
+                ? { ...n, html: `${n.html}<h2>${pick('AI 学习整理', 'AI study notes')}</h2>${html}`, updatedAt: Date.now() }
                 : n,
             ),
           }
         : d,
     )
-    notify('AI 结果已追加到笔记末尾')
+    notify(pick('AI 结果已追加到笔记末尾', 'AI result added to the end of the note.'))
   }
   async function authenticateAccount(
     mode: 'login' | 'register',
@@ -449,7 +456,9 @@ export default function App() {
     cloudLastPushed.current = null
     setCloudSession(session)
     await connectCloud(session, data!)
-    notify(mode === 'register' ? '账户已创建，笔记正在上传云端' : '登录成功，笔记已连接云端')
+    notify(mode === 'register'
+      ? pick('账户已创建，笔记正在上传云端', 'Account created. Your notes are uploading.')
+      : pick('登录成功，笔记已连接云端', 'Signed in. Your notes are connected to the cloud.'))
   }
   async function syncNow() {
     if (!cloudSession || !data) return
@@ -458,7 +467,7 @@ export default function App() {
       return
     }
     await syncCloudSnapshot(data, cloudSession)
-    notify('云端同步已完成')
+    notify(pick('云端同步已完成', 'Cloud sync complete.'))
   }
   async function logoutAccount() {
     if (!cloudSession) return
@@ -472,16 +481,16 @@ export default function App() {
     cloudLastPushed.current = null
     setCloudSession(null)
     setCloudState(cloudApiUrl() ? 'idle' : 'unavailable')
-    notify('已退出云端账户，本机笔记仍然保留')
+    notify(pick('已退出云端账户，本机笔记仍然保留', 'Signed out. Notes remain on this device.'))
   }
   if (loadError)
     return (
       <div className="app-loading">
         <BookOpen size={36} />
-        <h1>暂时无法打开笔记</h1>
+        <h1>{pick('暂时无法打开笔记', 'Notes could not be opened')}</h1>
         <p role="alert">{loadError}</p>
         <button className="button primary" onClick={() => location.reload()}>
-          重新加载
+          {pick('重新加载', 'Reload')}
         </button>
       </div>
     )
@@ -490,7 +499,7 @@ export default function App() {
       <div className="app-loading">
         <BookOpen size={36} />
         <h1>Orion</h1>
-        <p>正在打开你的学习空间…</p>
+        <p>{pick('正在打开你的学习空间…', 'Opening your learning space…')}</p>
       </div>
     )
   return (
@@ -498,11 +507,11 @@ export default function App() {
       {sidebarOpen ? (
         <button
           className="sidebar-scrim"
-          aria-label="收起侧栏"
+          aria-label={pick('收起侧栏', 'Close sidebar')}
           onClick={() => setSidebarOpen(false)}
         />
       ) : null}
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`} aria-label="主导航">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`} aria-label={pick('主导航', 'Main navigation')}>
         <div
           className="brand"
           role="presentation"
@@ -520,7 +529,7 @@ export default function App() {
           <button
             type="button"
             className="icon-button mobile-close"
-            aria-label="关闭侧栏"
+            aria-label={pick('关闭侧栏', 'Close sidebar')}
             onClick={(e) => {
               e.preventDefault()
               e.stopPropagation()
@@ -533,20 +542,20 @@ export default function App() {
         <button
           type="button"
           className="workspace-label"
-          aria-label="账户与云同步"
+          aria-label={pick('账户与云同步', 'Account & cloud sync')}
           onClick={() => setDialog('account')}
         >
           <span className="workspace-avatar">O</span>
           <span>
-            我的学习空间
+            {pick('我的学习空间', 'My learning space')}
             <small>
               {cloudSession
                 ? cloudState === 'checking' || cloudState === 'syncing'
-                  ? '正在同步…'
+                  ? pick('正在同步…', 'Syncing…')
                   : cloudState === 'error'
-                    ? '本地已保存 · 等待同步'
+                    ? pick('本地已保存 · 等待同步', 'Saved locally · Waiting to sync')
                     : cloudSession.user.email
-                : '登录后跨设备同步'}
+                : pick('登录后跨设备同步', 'Sign in to sync across devices')}
             </small>
           </span>
           {cloudSession && cloudState !== 'error' ? <Cloud size={15} /> : <CloudOff size={15} />}
@@ -555,8 +564,8 @@ export default function App() {
           <Search size={16} />
           <input
             ref={searchRef}
-            aria-label="搜索笔记"
-            placeholder="搜索笔记…"
+            aria-label={pick('搜索笔记', 'Search notes')}
+            placeholder={pick('搜索笔记…', 'Search notes…')}
             value={search}
             onChange={(e) => {
               setSearch(e.target.value)
@@ -567,7 +576,7 @@ export default function App() {
         </label>
         <button className="button primary new-note" onClick={createNote}>
           <Plus size={18} />
-          新建笔记<span>＋</span>
+          {pick('新建笔记', 'New note')}<span>＋</span>
         </button>
         <nav className="main-nav">
           <button
@@ -575,28 +584,28 @@ export default function App() {
             onClick={() => navigate('library')}
           >
             <LayoutGrid size={18} />
-            全部笔记<span>{active.length}</span>
+            {pick('全部笔记', 'All notes')}<span>{active.length}</span>
           </button>
           <button
             className={view === 'review' ? 'selected' : ''}
             onClick={() => navigate('review')}
           >
             <Layers size={18} />
-            学习与复习{dueCount ? <span className="count-pill">{dueCount}</span> : null}
+            {pick('学习与复习', 'Learn & review')}{dueCount ? <span className="count-pill">{dueCount}</span> : null}
           </button>
           <button
             className={favorites ? 'selected' : ''}
             onClick={() => navigate('library', '', true)}
           >
             <Star size={18} />
-            收藏笔记
+            {pick('收藏笔记', 'Favorites')}
           </button>
         </nav>
         <div className="sidebar-section-label">
-          笔记本
+          {pick('笔记本', 'Notebooks')}
           <button
             className="icon-button"
-            aria-label="新建笔记本"
+            aria-label={pick('新建笔记本', 'New notebook')}
             onClick={() => {
               setFolderDraft('')
               setDialog('folder')
@@ -618,7 +627,7 @@ export default function App() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-section-label recent-label">最近编辑</div>
+        <div className="sidebar-section-label recent-label">{pick('最近编辑', 'Recently edited')}</div>
         <nav className="recent-nav">
           {[...active]
             .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -630,15 +639,15 @@ export default function App() {
                 onClick={() => openNote(n)}
               >
                 <FileText size={15} />
-                <span>{n.title || '无标题笔记'}</span>
+                <span>{n.title || pick('无标题笔记', 'Untitled note')}</span>
               </button>
             ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="quiet-card">
             <Leaf size={18} />
-            <strong>给知识一点生长的时间</strong>
-            <span>写下来，再想一遍。</span>
+            <strong>{pick('给知识一点生长的时间', 'Give knowledge time to grow')}</strong>
+            <span>{pick('写下来，再想一遍。', 'Write it down. Think it through.')}</span>
           </div>
           <button
             className="sidebar-utility"
@@ -648,20 +657,22 @@ export default function App() {
             }}
           >
             <Upload size={17} />
-            导入与备份
+            {pick('导入与备份', 'Import & backup')}
           </button>
           <button className="sidebar-utility" onClick={() => navigate('trash')}>
             <Trash2 size={17} />
-            回收站
+            {pick('回收站', 'Trash')}
           </button>
           <button className="sidebar-utility" onClick={() => setDialog('settings')}>
             <SettingsIcon size={17} />
-            设置
+            {pick('设置', 'Settings')}
             <span className={`connection-dot ${settings.apiKey ? 'connected' : ''}`} />
           </button>
           <div className="local-footer">
             <span className={cloudSession && cloudState === 'synced' ? 'connected' : ''} />
-            {cloudSession ? '本地优先 · 云端同步' : '数据保存在此设备'}
+            {cloudSession
+              ? pick('本地优先 · 云端同步', 'Local-first · Cloud sync')
+              : pick('数据保存在此设备', 'Data saved on this device')}
           </div>
         </div>
       </aside>
@@ -670,23 +681,23 @@ export default function App() {
           <div className="breadcrumbs">
             <button
               className="icon-button sidebar-toggle"
-              aria-label="打开侧栏"
+              aria-label={pick('打开侧栏', 'Open sidebar')}
               onClick={() => setSidebarOpen(true)}
             >
               <Menu size={20} />
             </button>
-            <span>我的空间</span>
+            <span>{pick('我的空间', 'My space')}</span>
             <ChevronRight size={14} />
             <span>
               {view === 'editor'
-                ? note?.folder || '笔记'
+                ? note?.folder || pick('笔记', 'Note')
                 : view === 'review'
-                  ? '学习与复习'
+                  ? pick('学习与复习', 'Learn & review')
                   : view === 'trash'
-                    ? '回收站'
+                    ? pick('回收站', 'Trash')
                     : favorites
-                      ? '收藏笔记'
-                      : folder || '全部笔记'}
+                      ? pick('收藏笔记', 'Favorites')
+                      : folder || pick('全部笔记', 'All notes')}
             </span>
           </div>
           <div className="topbar-actions">
@@ -698,14 +709,18 @@ export default function App() {
               ) : (
                 <CloudOff size={14} />
               )}
-              {saveState === 'saved' ? '已保存' : saveState === 'saving' ? '保存中…' : '保存失败'}
+              {saveState === 'saved'
+                ? pick('已保存', 'Saved')
+                : saveState === 'saving'
+                  ? pick('保存中…', 'Saving…')
+                  : pick('保存失败', 'Save failed')}
             </span>
             {view === 'editor' && note ? (
               <>
                 <button
                   className={`icon-button favorite-button ${note.favorite ? 'is-favorite' : ''}`}
-                  title="收藏"
-                  aria-label={note.favorite ? '取消收藏' : '收藏笔记'}
+                  title={pick('收藏', 'Favorite')}
+                  aria-label={note.favorite ? pick('取消收藏', 'Remove from favorites') : pick('收藏笔记', 'Favorite note')}
                   onClick={() => updateNote(note.id, { favorite: !note.favorite })}
                 >
                   <Star size={18} fill={note.favorite ? 'currentColor' : 'none'} />
@@ -713,7 +728,7 @@ export default function App() {
                 <details className="export-menu">
                   <summary className="button plain">
                     <Download size={16} />
-                    <span>导出</span>
+                    <span>{pick('导出', 'Export')}</span>
                     <ChevronDown size={13} />
                   </summary>
                   <div className="dropdown-menu">
@@ -723,22 +738,22 @@ export default function App() {
                         void pdf()
                       }}
                     >
-                      {exporting ? '正在生成 PDF…' : '下载 PDF（含手写）'}
+                      {exporting ? pick('正在生成 PDF…', 'Creating PDF…') : pick('下载 PDF（含手写）', 'Download PDF with drawings')}
                     </button>
-                    <button onClick={() => exportMarkdown(note)}>Markdown 文件</button>
-                    <button onClick={() => exportPlainText(note)}>纯文本文件</button>
-                    <button onClick={() => window.print()}>打印 / 保存为 PDF</button>
-                    <button onClick={backup}>完整数据备份</button>
+                    <button onClick={() => exportMarkdown(note)}>{pick('Markdown 文件', 'Markdown file')}</button>
+                    <button onClick={() => exportPlainText(note)}>{pick('纯文本文件', 'Plain text file')}</button>
+                    <button onClick={() => window.print()}>{pick('打印 / 保存为 PDF', 'Print / Save as PDF')}</button>
+                    <button onClick={backup}>{pick('完整数据备份', 'Full data backup')}</button>
                   </div>
                 </details>
                 <button
-                  aria-label="学习伙伴"
+                  aria-label={pick('学习伙伴', 'Study partner')}
                   className={`button ai-toggle ${aiOpen ? 'on' : ''}`}
                   aria-pressed={aiOpen}
                   onClick={() => setAiOpen(!aiOpen)}
                 >
                   <Sparkles size={16} />
-                  <span>学习伙伴</span>
+                  <span>{pick('学习伙伴', 'Study partner')}</span>
                 </button>
               </>
             ) : null}
@@ -746,9 +761,12 @@ export default function App() {
         </header>
         {saveState === 'error' ? (
           <div className="save-error" role="alert">
-            本地保存失败，可能是存储空间不足。请立即导出备份，避免丢失修改。
-            <button onClick={backup}>导出备份</button>
-            <button onClick={() => setData({ ...data })}>重试保存</button>
+            {pick(
+              '本地保存失败，可能是存储空间不足。请立即导出备份，避免丢失修改。',
+              'Local save failed, possibly because storage is full. Export a backup now to protect your changes.',
+            )}
+            <button onClick={backup}>{pick('导出备份', 'Export backup')}</button>
+            <button onClick={() => setData({ ...data })}>{pick('重试保存', 'Retry')}</button>
           </div>
         ) : null}
         <main className={`main-content ${view === 'editor' && aiOpen && note ? 'with-ai' : ''}`}>
@@ -760,11 +778,11 @@ export default function App() {
                     <span className="note-icon">
                       <BookOpen size={23} strokeWidth={1.5} />
                     </span>
-                    <span>一页笔记，一步理解</span>
+                    <span>{pick('一页笔记，一步理解', 'One note, one step closer')}</span>
                     <button
                       className="icon-button"
-                      aria-label="笔记属性"
-                      title="笔记属性"
+                      aria-label={pick('笔记属性', 'Note properties')}
+                      title={pick('笔记属性', 'Note properties')}
                       onClick={() => {
                         setTagDraft(note.tags.join(', '))
                         setFolderChoice(note.folder)
@@ -776,23 +794,23 @@ export default function App() {
                   </div>
                   <input
                     className="note-title"
-                    aria-label="笔记标题"
+                    aria-label={pick('笔记标题', 'Note title')}
                     value={note.title}
                     maxLength={500}
-                    placeholder="无标题笔记"
+                    placeholder={pick('无标题笔记', 'Untitled note')}
                     onChange={(e) => updateNote(note.id, { title: e.target.value })}
                   />
                   <div className="note-metadata">
-                    <span>编辑于 {date(note.updatedAt)}</span>
+                    <span>{pick('编辑于', 'Edited')} {date(note.updatedAt, locale)}</span>
                     <span className="metadata-dot">·</span>
-                    <span>{words} 字</span>
+                    <span>{pick(`${words} 字`, `${words} characters`)}</span>
                     <div className="note-tags">
                       {note.tags.map((t) => (
                         <span key={t}># {t}</span>
                       ))}
                     </div>
                   </div>
-                  <div className="note-tabs" role="tablist" aria-label="笔记形式">
+                  <div className="note-tabs" role="tablist" aria-label={pick('笔记形式', 'Note mode')}>
                     <button
                       role="tab"
                       aria-selected={tab === 'text'}
@@ -800,7 +818,7 @@ export default function App() {
                       onClick={() => setTab('text')}
                     >
                       <Type size={16} />
-                      文字笔记
+                      {pick('文字笔记', 'Text note')}
                     </button>
                     <button
                       role="tab"
@@ -809,7 +827,7 @@ export default function App() {
                       onClick={() => setTab('drawing')}
                     >
                       <PenTool size={16} />
-                      手写画板
+                      {pick('手写画板', 'Drawing')}
                       {note.strokes.length ? (
                         <span className="tiny-count">{note.strokes.length}</span>
                       ) : null}
@@ -822,16 +840,16 @@ export default function App() {
                       }}
                     >
                       <Layers size={15} />
-                      制作闪卡
+                      {pick('制作闪卡', 'Create flashcard')}
                     </button>
                   </div>
                 </div>
                 <div
                   className="note-body"
                   role="tabpanel"
-                  aria-label={tab === 'text' ? '文字笔记' : '手写画板'}
+                  aria-label={tab === 'text' ? pick('文字笔记', 'Text note') : pick('手写画板', 'Drawing')}
                 >
-                  <Suspense fallback={<div className="loading-inline">正在准备…</div>}>
+                  <Suspense fallback={<div className="loading-inline">{pick('正在准备…', 'Preparing…')}</div>}>
                     {tab === 'text' ? (
                       <NoteEditor
                         key={note.id}
@@ -855,20 +873,23 @@ export default function App() {
                 </div>
                 <footer className="editor-footer">
                   <span>
-                    <Check size={13} /> 你的思考，值得被记录
+                    <Check size={13} /> {pick('你的思考，值得被记录', 'Your thinking is worth capturing')}
                   </span>
-                  <span>{Math.max(1, Math.ceil(words / 400))} 分钟阅读</span>
+                  <span>{pick(
+                    `${Math.max(1, Math.ceil(words / 400))} 分钟阅读`,
+                    `${Math.max(1, Math.ceil(words / 400))} min read`,
+                  )}</span>
                 </footer>
               </section>
               {aiOpen ? (
                 <>
                   <button
                     className="ai-scrim"
-                    aria-label="收起学习伙伴"
+                    aria-label={pick('收起学习伙伴', 'Close study partner')}
                     onClick={() => setAiOpen(false)}
                   />
                   <Suspense
-                    fallback={<aside className="ai-panel loading-inline">正在准备学习伙伴…</aside>}
+                    fallback={<aside className="ai-panel loading-inline">{pick('正在准备学习伙伴…', 'Preparing study partner…')}</aside>}
                   >
                     <AIPanel
                       key={note.id}
@@ -913,23 +934,23 @@ export default function App() {
                 <div>
                   <h1>
                     {view === 'trash'
-                      ? '回收站'
+                      ? pick('回收站', 'Trash')
                       : favorites
-                        ? '值得再读一遍'
-                        : folder || '我的笔记'}
+                        ? pick('值得再读一遍', 'Worth another read')
+                        : folder || pick('我的笔记', 'My Notes')}
                   </h1>
                   <p>
                     {view === 'trash'
-                      ? '笔记保留在这里，直到你恢复或永久删除。'
+                      ? pick('笔记保留在这里，直到你恢复或永久删除。', 'Notes stay here until you restore or permanently delete them.')
                       : search
-                        ? `搜索「${search}」· ${visibleNotes.length} 篇结果`
-                        : '收集想法，连接知识，慢慢形成自己的理解。'}
+                        ? pick(`搜索「${search}」· ${visibleNotes.length} 篇结果`, `Search “${search}” · ${visibleNotes.length} results`)
+                        : pick('收集想法，连接知识，慢慢形成自己的理解。', 'Collect ideas, connect knowledge, and build your own understanding.')}
                   </p>
                 </div>
                 {view !== 'trash' ? (
                   <button className="button primary" onClick={createNote}>
                     <Plus size={17} />
-                    新建笔记
+                    {pick('新建笔记', 'New note')}
                   </button>
                 ) : null}
               </div>
@@ -940,18 +961,20 @@ export default function App() {
                   </span>
                   <span>
                     <strong>
-                      {dueCount ? `今天有 ${dueCount} 张闪卡等你回想` : '给学过的知识，一次回响'}
+                      {dueCount
+                        ? pick(`今天有 ${dueCount} 张闪卡等你回想`, `${dueCount} flashcards are ready today`)
+                        : pick('给学过的知识，一次回响', 'Bring what you learned back to mind')}
                     </strong>
-                    <small>花几分钟，让记忆更牢固一点。</small>
+                    <small>{pick('花几分钟，让记忆更牢固一点。', 'Spend a few minutes making the memory stronger.')}</small>
                   </span>
                   <span className="banner-cta">
-                    开始复习 <ArrowUpRight size={18} />
+                    {pick('开始复习', 'Start review')} <ArrowUpRight size={18} />
                   </span>
                 </button>
               ) : null}
               <div className="library-list-head">
-                <span>{visibleNotes.length} 篇笔记</span>
-                <span>按最近编辑排序</span>
+                <span>{pick(`${visibleNotes.length} 篇笔记`, `${visibleNotes.length} notes`)}</span>
+                <span>{pick('按最近编辑排序', 'Recently edited first')}</span>
               </div>
               <div className="notes-grid">
                 {visibleNotes.map((n) => (
@@ -959,8 +982,8 @@ export default function App() {
                     {view === 'trash' ? (
                       <div className="card-main">
                         <Folder size={21} />
-                        <h2>{n.title || '无标题笔记'}</h2>
-                        <p>{htmlText(n.html).slice(0, 110) || '还没有文字内容'}</p>
+                        <h2>{n.title || pick('无标题笔记', 'Untitled note')}</h2>
+                        <p>{htmlText(n.html).slice(0, 110) || pick('还没有文字内容', 'No text yet')}</p>
                       </div>
                     ) : (
                       <button className="card-main" onClick={() => openNote(n)}>
@@ -969,33 +992,33 @@ export default function App() {
                           {n.folder}
                           {n.favorite ? <Star size={14} fill="currentColor" /> : null}
                         </span>
-                        <h2>{n.title || '无标题笔记'}</h2>
-                        <p>{htmlText(n.html).slice(0, 110) || '还没有文字内容，点击开始记录…'}</p>
+                        <h2>{n.title || pick('无标题笔记', 'Untitled note')}</h2>
+                        <p>{htmlText(n.html).slice(0, 110) || pick('还没有文字内容，点击开始记录…', 'No text yet. Click to start writing…')}</p>
                         {n.strokes.length ? (
                           <span className="handwriting-badge">
                             <PenTool size={13} />
-                            包含手写内容
+                            {pick('包含手写内容', 'Includes drawing')}
                           </span>
                         ) : null}
                       </button>
                     )}
                     <div className="card-footer">
-                      <span>{date(n.updatedAt)}</span>
+                      <span>{date(n.updatedAt, locale)}</span>
                       {view === 'trash' ? (
                         <>
                           <button
                             className="text-button"
                             onClick={() => {
                               updateNote(n.id, { deletedAt: undefined })
-                              notify('笔记已恢复')
+                              notify(pick('笔记已恢复', 'Note restored.'))
                             }}
                           >
                             <RotateCcw size={14} />
-                            恢复
+                            {pick('恢复', 'Restore')}
                           </button>
                           <button
                             className="icon-button danger"
-                            aria-label={`永久删除 ${n.title}`}
+                            aria-label={pick(`永久删除 ${n.title}`, `Permanently delete ${n.title}`)}
                             onClick={() => setPendingDelete(n)}
                           >
                             <Trash2 size={15} />
@@ -1004,10 +1027,10 @@ export default function App() {
                       ) : (
                         <button
                           className="icon-button"
-                          aria-label={`删除 ${n.title}`}
+                          aria-label={pick(`删除 ${n.title}`, `Delete ${n.title}`)}
                           onClick={() => {
                             updateNote(n.id, { deletedAt: Date.now() })
-                            notify('已移到回收站，可随时恢复')
+                            notify(pick('已移到回收站，可随时恢复', 'Moved to trash. You can restore it anytime.'))
                           }}
                         >
                           <Trash2 size={15} />
@@ -1022,22 +1045,22 @@ export default function App() {
                   <FileText size={32} />
                   <h2>
                     {search
-                      ? '没有找到相关笔记'
+                      ? pick('没有找到相关笔记', 'No matching notes')
                       : view === 'trash'
-                        ? '回收站是空的'
-                        : '给新的想法，留一页空白'}
+                        ? pick('回收站是空的', 'Trash is empty')
+                        : pick('给新的想法，留一页空白', 'Give a new idea a blank page')}
                   </h2>
                   <p>
                     {search
-                      ? '试试标题、标签或正文中的其他关键词。'
-                      : '每一份理解，都可以从一个简单的记录开始。'}
+                      ? pick('试试标题、标签或正文中的其他关键词。', 'Try another keyword from the title, tags, or note text.')
+                      : pick('每一份理解，都可以从一个简单的记录开始。', 'Every understanding can begin with a simple note.')}
                   </p>
                   {view !== 'trash' ? (
                     <button
                       className="button secondary"
                       onClick={search ? () => setSearch('') : createNote}
                     >
-                      {search ? '清除搜索' : '写第一篇笔记'}
+                      {search ? pick('清除搜索', 'Clear search') : pick('写第一篇笔记', 'Write your first note')}
                     </button>
                   ) : null}
                 </div>
@@ -1059,7 +1082,7 @@ export default function App() {
             } catch {
               /* Preferences can remain in memory. */
             }
-            notify('设置已更新，密钥仅保留在本次打开的页面中')
+            notify(pick('设置已更新，密钥仅保留在本次打开的页面中', 'Settings updated. Your key stays only in this open page.'))
           }}
           onClose={() => setDialog(null)}
         />
@@ -1076,7 +1099,7 @@ export default function App() {
         />
       ) : null}
       {dialog === 'folder' ? (
-        <Modal title="新建笔记本" onClose={() => setDialog(null)}>
+        <Modal title={pick('新建笔记本', 'New notebook')} onClose={() => setDialog(null)}>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -1088,24 +1111,24 @@ export default function App() {
             }}
           >
             <label className="field">
-              笔记本名称
+              {pick('笔记本名称', 'Notebook name')}
               <input
                 autoFocus
                 required
                 maxLength={100}
                 value={folderDraft}
                 onChange={(e) => setFolderDraft(e.target.value)}
-                placeholder="例如：阅读、产品设计、英语"
+                placeholder={pick('例如：阅读、产品设计、英语', 'For example: Reading, Product Design, English')}
               />
             </label>
             <div className="modal-actions">
-              <button className="button primary">创建笔记本</button>
+              <button className="button primary">{pick('创建笔记本', 'Create notebook')}</button>
             </div>
           </form>
         </Modal>
       ) : null}
       {dialog === 'properties' && note ? (
-        <Modal title="整理这篇笔记" onClose={() => setDialog(null)}>
+        <Modal title={pick('整理这篇笔记', 'Organize this note')} onClose={() => setDialog(null)}>
           <form
             onSubmit={(e) => {
               e.preventDefault()
@@ -1126,7 +1149,7 @@ export default function App() {
             }}
           >
             <label className="field">
-              所属笔记本
+              {pick('所属笔记本', 'Notebook')}
               <select value={folderChoice} onChange={(e) => setFolderChoice(e.target.value)}>
                 {allFolders.map((f) => (
                   <option key={f}>{f}</option>
@@ -1134,12 +1157,12 @@ export default function App() {
               </select>
             </label>
             <label className="field">
-              标签
+              {pick('标签', 'Tags')}
               <input
                 value={tagDraft}
                 maxLength={1000}
                 onChange={(e) => setTagDraft(e.target.value)}
-                placeholder="用逗号分隔，例如：学习方法, 读书"
+                placeholder={pick('用逗号分隔，例如：学习方法, 读书', 'Separate with commas, for example: study, reading')}
               />
             </label>
             <div className="modal-actions">
@@ -1150,18 +1173,18 @@ export default function App() {
                   updateNote(note.id, { deletedAt: Date.now() })
                   setDialog(null)
                   navigate('library')
-                  notify('笔记已移入回收站')
+                  notify(pick('笔记已移入回收站', 'Note moved to trash.'))
                 }}
               >
-                移入回收站
+                {pick('移入回收站', 'Move to trash')}
               </button>
-              <button className="button primary">保存修改</button>
+              <button className="button primary">{pick('保存修改', 'Save changes')}</button>
             </div>
           </form>
         </Modal>
       ) : null}
       {dialog === 'card' ? (
-        <Modal title="制作一张复习闪卡" onClose={() => setDialog(null)}>
+        <Modal title={pick('制作一张复习闪卡', 'Create a review flashcard')} onClose={() => setDialog(null)}>
           {active.length ? (
             <form
               onSubmit={(e) => {
@@ -1182,51 +1205,51 @@ export default function App() {
               }}
             >
               <label className="field">
-                关联笔记
+                {pick('关联笔记', 'Related note')}
                 <select
                   required
                   value={cardDraft.noteId}
                   onChange={(e) => setCardDraft({ ...cardDraft, noteId: e.target.value })}
                 >
                   <option value="" disabled>
-                    选择笔记
+                    {pick('选择笔记', 'Choose a note')}
                   </option>
                   {active.map((n) => (
                     <option key={n.id} value={n.id}>
-                      {n.title || '无标题笔记'}
+                      {n.title || pick('无标题笔记', 'Untitled note')}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="field">
-                问题
+                {pick('问题', 'Question')}
                 <textarea
                   required
                   rows={3}
                   maxLength={4000}
                   value={cardDraft.question}
                   onChange={(e) => setCardDraft({ ...cardDraft, question: e.target.value })}
-                  placeholder="一个值得主动回想的问题…"
+                  placeholder={pick('一个值得主动回想的问题…', 'A question worth recalling actively…')}
                 />
               </label>
               <label className="field">
-                参考答案
+                {pick('参考答案', 'Suggested answer')}
                 <textarea
                   required
                   rows={4}
                   maxLength={10000}
                   value={cardDraft.answer}
                   onChange={(e) => setCardDraft({ ...cardDraft, answer: e.target.value })}
-                  placeholder="用自己的话解释这个知识点…"
+                  placeholder={pick('用自己的话解释这个知识点…', 'Explain this idea in your own words…')}
                 />
               </label>
               <div className="modal-actions">
-                <button className="button primary">加入复习</button>
+                <button className="button primary">{pick('加入复习', 'Add to review')}</button>
               </div>
             </form>
           ) : (
             <div className="empty-state">
-              <p>先创建一篇笔记，再为它制作闪卡。</p>
+              <p>{pick('先创建一篇笔记，再为它制作闪卡。', 'Create a note before making a flashcard for it.')}</p>
               <button
                 className="button primary"
                 onClick={() => {
@@ -1234,7 +1257,7 @@ export default function App() {
                   createNote()
                 }}
               >
-                创建笔记
+                {pick('创建笔记', 'Create note')}
               </button>
             </div>
           )}
@@ -1242,27 +1265,29 @@ export default function App() {
       ) : null}
       {dialog === 'import' ? (
         <Modal
-          title="导入与备份"
+          title={pick('导入与备份', 'Import & backup')}
           onClose={() => {
             if (!importing) setDialog(null)
           }}
         >
-          <p className="dialog-description">把已有的知识带进来，也为重要的记录留一份备份。</p>
+          <p className="dialog-description">{pick('把已有的知识带进来，也为重要的记录留一份备份。', 'Bring existing knowledge in and keep a backup of what matters.')}</p>
           <label className={`import-zone ${importing ? 'disabled' : ''}`}>
             <Upload size={26} />
-            <strong>{importing ? '正在读取文件…' : '选择要导入的文件'}</strong>
-            <span>Markdown、TXT 或 Orion JSON 备份 · 最大 50 MB</span>
+            <strong>{importing ? pick('正在读取文件…', 'Reading file…') : pick('选择要导入的文件', 'Choose a file to import')}</strong>
+            <span>{pick('Markdown、TXT 或 Orion JSON 备份 · 最大 50 MB', 'Markdown, TXT, or Orion JSON backup · 50 MB max')}</span>
             <input
               type="file"
-              aria-label="选择导入文件"
+              aria-label={pick('选择导入文件', 'Choose import file')}
               accept=".md,.markdown,.txt,.json"
               disabled={importing}
               onChange={(e) => void importFile(e)}
             />
           </label>
           <p className="field-help">
-            备份导入为新副本，保留当前所有笔记。JSON
-            包含手写笔迹、闪卡和复习进度，可用于迁移到其他设备。
+            {pick(
+              '备份导入为新副本，保留当前所有笔记。JSON 包含手写笔迹、闪卡和复习进度，可用于迁移到其他设备。',
+              'Backups import as new copies and keep all current notes. JSON includes drawings, flashcards, and review progress for moving to another device.',
+            )}
           </p>
           {importError ? (
             <p className="error-box" role="alert">
@@ -1271,18 +1296,21 @@ export default function App() {
           ) : null}
           <button className="button secondary full" onClick={backup}>
             <Download size={17} />
-            导出完整备份
+            {pick('导出完整备份', 'Export full backup')}
           </button>
         </Modal>
       ) : null}
       {pendingDelete ? (
-        <Modal title="永久删除这篇笔记？" onClose={() => setPendingDelete(null)}>
+        <Modal title={pick('永久删除这篇笔记？', 'Permanently delete this note?')} onClose={() => setPendingDelete(null)}>
           <p className="dialog-description">
-            「{pendingDelete.title}」的文字、手写内容和相关闪卡将一起删除，无法撤销。
+            {pick(
+              `「${pendingDelete.title}」的文字、手写内容和相关闪卡将一起删除，无法撤销。`,
+              `Text, drawings, and related flashcards in “${pendingDelete.title}” will be deleted. This cannot be undone.`,
+            )}
           </p>
           <div className="modal-actions">
             <button className="button secondary" onClick={() => setPendingDelete(null)}>
-              取消
+              {pick('取消', 'Cancel')}
             </button>
             <button
               className="button danger-fill"
@@ -1293,10 +1321,10 @@ export default function App() {
                   cards: data.cards.filter((c) => c.noteId !== pendingDelete.id),
                 })
                 setPendingDelete(null)
-                notify('已永久删除')
+                notify(pick('已永久删除', 'Permanently deleted.'))
               }}
             >
-              确认永久删除
+              {pick('确认永久删除', 'Delete permanently')}
             </button>
           </div>
         </Modal>
@@ -1305,7 +1333,7 @@ export default function App() {
         <div className="toast" role="status">
           <Check size={17} />
           {toast}
-          <button className="icon-button" aria-label="关闭提示" onClick={() => setToast('')}>
+          <button className="icon-button" aria-label={pick('关闭提示', 'Dismiss notification')} onClick={() => setToast('')}>
             <X size={15} />
           </button>
         </div>

@@ -2,6 +2,7 @@ interface Env {
   DB: D1Database
   IMAGES: R2Bucket
   ALLOWED_ORIGINS: string
+  AUTH_PEPPER: string
 }
 
 type UserRow = {
@@ -23,7 +24,6 @@ type WorkspaceMeta = {
 
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
-const PASSWORD_ITERATIONS = 210_000
 const SESSION_MS = 30 * 24 * 60 * 60 * 1000
 const AUTH_WINDOW_MS = 10 * 60 * 1000
 const AUTH_ATTEMPTS = 10
@@ -109,9 +109,9 @@ function normalizeEmail(value: unknown) {
   return email
 }
 
-function validatePassword(value: unknown) {
-  if (typeof value !== 'string' || value.length < 10 || value.length > 128)
-    throw new ApiError(400, '密码需要 10–128 个字符。')
+function validatePasswordProof(value: unknown) {
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(value))
+    throw new ApiError(400, '密码证明格式不正确，请刷新页面后重试。')
   return value
 }
 
@@ -134,40 +134,45 @@ async function sha256(value: string) {
   return toBase64Url(new Uint8Array(digest))
 }
 
-async function derivePassword(password: string, salt: Uint8Array, iterations: number) {
-  const material = await crypto.subtle.importKey(
+async function proofHmac(
+  proof: string,
+  email: string,
+  salt: Uint8Array,
+  pepper: string,
+) {
+  if (pepper.length < 32) throw new ApiError(503, '服务认证密钥尚未配置。')
+  const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(password),
-    { name: 'PBKDF2' },
+    encoder.encode(pepper),
+    { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['deriveBits'],
+    ['sign'],
   )
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations },
-    material,
-    256,
-  )
-  return new Uint8Array(bits)
+  const emailBytes = encoder.encode(email)
+  const proofBytes = fromBase64Url(proof)
+  const input = new Uint8Array(salt.length + emailBytes.length + 1 + proofBytes.length)
+  input.set(salt)
+  input.set(emailBytes, salt.length)
+  input[salt.length + emailBytes.length] = 0
+  input.set(proofBytes, salt.length + emailBytes.length + 1)
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, input))
 }
 
-async function hashPassword(password: string) {
+async function hashPasswordProof(proof: string, email: string, pepper: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16))
-  const hash = await derivePassword(password, salt, PASSWORD_ITERATIONS)
-  return `pbkdf2-sha256$${PASSWORD_ITERATIONS}$${toBase64Url(salt)}$${toBase64Url(hash)}`
+  const hash = await proofHmac(proof, email, salt, pepper)
+  return `proof-hmac-sha256$${toBase64Url(salt)}$${toBase64Url(hash)}`
 }
 
-async function verifyPassword(password: string, record: string) {
-  const [algorithm, iterationsText, saltText, expectedText] = record.split('$')
-  const iterations = Number(iterationsText)
-  if (
-    algorithm !== 'pbkdf2-sha256' ||
-    !Number.isInteger(iterations) ||
-    iterations < 100_000 ||
-    !saltText ||
-    !expectedText
-  )
-    return false
-  const actual = await derivePassword(password, fromBase64Url(saltText), iterations)
+async function verifyPasswordProof(
+  proof: string,
+  email: string,
+  pepper: string,
+  record: string,
+) {
+  const [algorithm, saltText, expectedText] = record.split('$')
+  if (algorithm !== 'proof-hmac-sha256' || !saltText || !expectedText) return false
+  const actual = await proofHmac(proof, email, fromBase64Url(saltText), pepper)
   const expected = fromBase64Url(expectedText)
   if (actual.length !== expected.length) return false
   let difference = 0
@@ -263,9 +268,9 @@ async function register(request: Request, env: Env) {
   const limitKey = await rateLimit(request, env, 'register')
   const body = (await readJson(request, 16_384)) as Record<string, unknown>
   const email = normalizeEmail(body.email)
-  const password = validatePassword(body.password)
+  const passwordProof = validatePasswordProof(body.passwordProof)
   const id = crypto.randomUUID()
-  const passwordHash = await hashPassword(password)
+  const passwordHash = await hashPasswordProof(passwordProof, email, env.AUTH_PEPPER)
   const now = Date.now()
   try {
     await env.DB.prepare(
@@ -286,13 +291,16 @@ async function login(request: Request, env: Env) {
   const limitKey = await rateLimit(request, env, 'login')
   const body = (await readJson(request, 16_384)) as Record<string, unknown>
   const email = normalizeEmail(body.email)
-  const password = validatePassword(body.password)
+  const passwordProof = validatePasswordProof(body.passwordProof)
   const user = await env.DB.prepare(
     'SELECT id, email, password_hash FROM users WHERE email = ?',
   )
     .bind(email)
     .first<UserRow>()
-  if (!user || !(await verifyPassword(password, user.password_hash)))
+  if (
+    !user ||
+    !(await verifyPasswordProof(passwordProof, user.email, env.AUTH_PEPPER, user.password_hash))
+  )
     throw new ApiError(401, '邮箱或密码不正确。')
   await env.DB.prepare('DELETE FROM auth_limits WHERE key = ?').bind(limitKey).run()
   return json(await createSession(env, { id: user.id, email: user.email }))
@@ -483,6 +491,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext) {
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
+    const english = request.headers.get('Accept-Language')?.toLowerCase().startsWith('en') ?? false
     const origin = allowedOrigin(request, env)
     if (origin === null) return json({ error: '不允许的请求来源。' }, 403)
     if (request.method === 'OPTIONS') return withCors(new Response(null, { status: 204 }), origin)
@@ -495,12 +504,61 @@ export default {
             ? { 'Retry-After': String(error.details.retryAfter) }
             : {}
         return withCors(
-          json({ error: error.message, ...(error.details || {}) }, error.status, headers),
+          json(
+            {
+              error: english ? englishErrors[error.message] || error.message : error.message,
+              ...(error.details || {}),
+            },
+            error.status,
+            headers,
+          ),
           origin,
         )
       }
       console.error(error)
-      return withCors(json({ error: '服务暂时不可用，请稍后重试。' }, 500), origin)
+      return withCors(
+        json(
+          {
+            error: english
+              ? 'The service is temporarily unavailable. Please try again.'
+              : '服务暂时不可用，请稍后重试。',
+          },
+          500,
+        ),
+        origin,
+      )
     }
   },
 } satisfies ExportedHandler<Env>
+
+const englishErrors: Record<string, string> = {
+  '请求内容过大。': 'The request is too large.',
+  '请求不是有效的 JSON。': 'The request is not valid JSON.',
+  '请输入邮箱地址。': 'Enter your email address.',
+  '邮箱格式不正确。': 'Enter a valid email address.',
+  '密码证明格式不正确，请刷新页面后重试。':
+    'The password proof is invalid. Refresh the page and try again.',
+  '服务认证密钥尚未配置。': 'The authentication secret is not configured.',
+  '尝试次数过多，请稍后再试。': 'Too many attempts. Please try again later.',
+  '这个邮箱已经注册，请直接登录。': 'This email is already registered. Sign in instead.',
+  '邮箱或密码不正确。': 'The email or password is incorrect.',
+  '请先登录。': 'Sign in first.',
+  '登录已过期，请重新登录。': 'Your session has expired. Sign in again.',
+  '云端数据不完整，请稍后重试。': 'Cloud data is incomplete. Please try again.',
+  '图片不存在。': 'Image not found.',
+  '请上传 PNG、JPEG、GIF、WebP 或 AVIF 图片。':
+    'Upload a PNG, JPEG, GIF, WebP, or AVIF image.',
+  '图片不能超过 12 MB。': 'Images must be 12 MB or smaller.',
+  '图片为空或超过 12 MB。': 'The image is empty or larger than 12 MB.',
+  '工作区数据格式不正确。': 'The workspace data is invalid.',
+  '同步版本不正确。': 'The sync revision is invalid.',
+  '云端已有更新，请先合并后重试。':
+    'A newer cloud version exists. Merge it before trying again.',
+  '云端版本已变化，请重新同步。': 'The cloud version changed. Sync again.',
+  '请先将笔记中的本地图片上传到 R2。':
+    'Upload local note images to R2 before syncing.',
+  '云端工作区超过 24 MB，请删除或压缩较大的图片后重试。':
+    'The cloud workspace exceeds 24 MB. Remove or compress large images and try again.',
+  '接口不存在。': 'Endpoint not found.',
+  '不允许的请求来源。': 'This request origin is not allowed.',
+}

@@ -23,6 +23,7 @@ import {
   Sigma,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
+import { useI18n } from '../i18n'
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
 const SAFE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
@@ -95,6 +96,7 @@ export default function NoteEditor({
   onChange: (html: string) => void
   onImageUpload?: (image: File) => Promise<string>
 }) {
+  const { language, pick } = useI18n()
   const callback = useRef(onChange)
   const imageUpload = useRef(onImageUpload)
   const editorRef = useRef<Editor | null>(null)
@@ -111,20 +113,20 @@ export default function NoteEditor({
   const insertImage = async (file: File, currentEditor = editorRef.current) => {
     if (!currentEditor) return
     if (!SAFE_IMAGE_TYPES.has(file.type)) {
-      showMessage('请使用 PNG、JPEG、GIF、WebP 或 AVIF 图片。')
+      showMessage(pick('请使用 PNG、JPEG、GIF、WebP 或 AVIF 图片。', 'Use a PNG, JPEG, GIF, WebP, or AVIF image.'))
       return
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      showMessage('图片超过 12 MB，请压缩后再粘贴。')
+      showMessage(pick('图片超过 12 MB，请压缩后再粘贴。', 'The image is over 12 MB. Compress it and try again.'))
       return
     }
     try {
-      if (imageUpload.current) showMessage('正在把图片安全上传到云端…')
+      if (imageUpload.current) showMessage(pick('正在把图片安全上传到云端…', 'Uploading the image securely…'))
       const src = imageUpload.current ? await imageUpload.current(file) : await readImage(file)
       currentEditor
         .chain()
         .focus()
-        .setImage({ src, alt: file.name || '粘贴的图片' })
+        .setImage({ src, alt: file.name || pick('粘贴的图片', 'Pasted image') })
         .run()
     } catch {
       if (imageUpload.current) {
@@ -133,20 +135,23 @@ export default function NoteEditor({
           currentEditor
             .chain()
             .focus()
-            .setImage({ src, alt: file.name || '粘贴的图片' })
+            .setImage({ src, alt: file.name || pick('粘贴的图片', 'Pasted image') })
             .run()
-          showMessage('云端暂时不可用，图片已保存在本机，联网后会继续上传。')
+          showMessage(pick(
+            '云端暂时不可用，图片已保存在本机，联网后会继续上传。',
+            'Cloud upload is unavailable. The image is saved locally and will upload when you reconnect.',
+          ))
           return
         } catch {
           /* Fall through to the shared error. */
         }
       }
-      showMessage('图片读取失败，请换一张图片重试。')
+      showMessage(pick('图片读取失败，请换一张图片重试。', 'The image could not be read. Try another image.'))
     }
   }
 
   const editMath = (kind: 'inline' | 'block', node: ProseMirrorNode, pos: number) => {
-    const latex = window.prompt('编辑 LaTeX 公式', String(node.attrs.latex ?? ''))
+    const latex = window.prompt(pick('编辑 LaTeX 公式', 'Edit LaTeX formula'), String(node.attrs.latex ?? ''))
     if (latex === null) return
     const value = latex.trim()
     const chain = editorRef.current?.chain().focus()
@@ -172,13 +177,13 @@ export default function NoteEditor({
         inlineOptions: { onClick: (node, pos) => editMath('inline', node, pos) },
         blockOptions: { onClick: (node, pos) => editMath('block', node, pos) },
       }),
-      Placeholder.configure({ placeholder: '写下一个想法，让理解从这里开始…' }),
+      Placeholder.configure({ placeholder: pick('写下一个想法，让理解从这里开始…', 'Write an idea and start making sense of it…') }),
     ],
     content: html,
     editorProps: {
       attributes: {
         class: 'prose note-prose',
-        'aria-label': '笔记正文',
+        'aria-label': pick('笔记正文', 'Note content'),
         role: 'textbox',
         'aria-multiline': 'true',
         spellcheck: 'false',
@@ -209,15 +214,15 @@ export default function NoteEditor({
     },
     onUpdate: ({ editor }) => callback.current(editor.getHTML()),
     shouldRerenderOnTransaction: true,
-  })
+  }, [language])
   editorRef.current = editor
   useEffect(() => {
     if (editor && html !== editor.getHTML()) editor.commands.setContent(html, { emitUpdate: false })
   }, [html, editor])
-  if (!editor) return <div className="loading-inline">编辑器准备中…</div>
+  if (!editor) return <div className="loading-inline">{pick('编辑器准备中…', 'Preparing editor…')}</div>
 
   const insertFormula = () => {
-    const latex = window.prompt('输入 LaTeX 公式', 'P(\\text{mW}) = 10^{\\frac{\\text{dBm}}{10}}')
+    const latex = window.prompt(pick('输入 LaTeX 公式', 'Enter a LaTeX formula'), 'P(\\text{mW}) = 10^{\\frac{\\text{dBm}}{10}}')
     if (latex?.trim()) editor.chain().focus().insertBlockMath({ latex: latex.trim() }).run()
   }
 
@@ -228,61 +233,61 @@ export default function NoteEditor({
   }
   const buttons = [
     {
-      label: '二级标题',
+      label: pick('二级标题', 'Heading 2'),
       Icon: Heading2,
       active: editor.isActive('heading', { level: 2 }),
       run: () => editor.chain().focus().toggleHeading({ level: 2 }).run(),
     },
     {
-      label: '三级标题',
+      label: pick('三级标题', 'Heading 3'),
       Icon: Heading3,
       active: editor.isActive('heading', { level: 3 }),
       run: () => editor.chain().focus().toggleHeading({ level: 3 }).run(),
     },
     {
-      label: '加粗',
+      label: pick('加粗', 'Bold'),
       Icon: Bold,
       active: editor.isActive('bold'),
       run: () => editor.chain().focus().toggleBold().run(),
     },
     {
-      label: '斜体',
+      label: pick('斜体', 'Italic'),
       Icon: Italic,
       active: editor.isActive('italic'),
       run: () => editor.chain().focus().toggleItalic().run(),
     },
     {
-      label: '删除线',
+      label: pick('删除线', 'Strikethrough'),
       Icon: Strikethrough,
       active: editor.isActive('strike'),
       run: () => editor.chain().focus().toggleStrike().run(),
     },
     {
-      label: '高亮',
+      label: pick('高亮', 'Highlight'),
       Icon: Highlighter,
       active: editor.isActive('highlight'),
       run: () => editor.chain().focus().toggleHighlight().run(),
     },
     {
-      label: '无序列表',
+      label: pick('无序列表', 'Bullet list'),
       Icon: List,
       active: editor.isActive('bulletList'),
       run: () => editor.chain().focus().toggleBulletList().run(),
     },
     {
-      label: '有序列表',
+      label: pick('有序列表', 'Numbered list'),
       Icon: ListOrdered,
       active: editor.isActive('orderedList'),
       run: () => editor.chain().focus().toggleOrderedList().run(),
     },
     {
-      label: '引用',
+      label: pick('引用', 'Quote'),
       Icon: Quote,
       active: editor.isActive('blockquote'),
       run: () => editor.chain().focus().toggleBlockquote().run(),
     },
     {
-      label: '代码块',
+      label: pick('代码块', 'Code block'),
       Icon: Code2,
       active: editor.isActive('codeBlock'),
       run: () => editor.chain().focus().toggleCodeBlock().run(),
@@ -290,7 +295,7 @@ export default function NoteEditor({
   ]
   return (
     <>
-      <div className="editor-toolbar" role="toolbar" aria-label="文字格式">
+      <div className="editor-toolbar" role="toolbar" aria-label={pick('文字格式', 'Text formatting')}>
         {buttons.map(({ label, Icon, active, run }) => (
           <button
             key={label}
@@ -304,13 +309,13 @@ export default function NoteEditor({
           </button>
         ))}
         <span className="toolbar-divider" />
-        <button className="icon-button" title="插入公式" aria-label="插入公式" onClick={insertFormula}>
+        <button className="icon-button" title={pick('插入公式', 'Insert formula')} aria-label={pick('插入公式', 'Insert formula')} onClick={insertFormula}>
           <Sigma size={17} />
         </button>
         <button
           className="icon-button"
-          title="插入图片"
-          aria-label="插入图片"
+          title={pick('插入图片', 'Insert image')}
+          aria-label={pick('插入图片', 'Insert image')}
           onClick={() => fileInput.current?.click()}
         >
           <ImagePlus size={17} />
@@ -320,14 +325,14 @@ export default function NoteEditor({
           className="sr-only"
           type="file"
           accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
-          aria-label="选择笔记图片"
+          aria-label={pick('选择笔记图片', 'Choose note image')}
           onChange={selectImage}
         />
         <span className="toolbar-divider" />
         <button
           className="icon-button"
-          title="撤销"
-          aria-label="撤销文字"
+          title={pick('撤销', 'Undo')}
+          aria-label={pick('撤销文字', 'Undo text edit')}
           disabled={!editor.can().undo()}
           onClick={() => editor.chain().focus().undo().run()}
         >
@@ -335,8 +340,8 @@ export default function NoteEditor({
         </button>
         <button
           className="icon-button"
-          title="重做"
-          aria-label="重做文字"
+          title={pick('重做', 'Redo')}
+          aria-label={pick('重做文字', 'Redo text edit')}
           disabled={!editor.can().redo()}
           onClick={() => editor.chain().focus().redo().run()}
         >
@@ -344,7 +349,10 @@ export default function NoteEditor({
         </button>
       </div>
       <div className={`editor-feature-hint ${message ? 'error' : ''}`} role={message ? 'alert' : undefined}>
-        {message || '可直接粘贴或拖入图片；粘贴 \\(…\\)、$…$ 或 $$…$$ 即可渲染公式，点击公式可编辑。'}
+        {message || pick(
+          '可直接粘贴或拖入图片；粘贴 \\(…\\)、$…$ 或 $$…$$ 即可渲染公式，点击公式可编辑。',
+          'Paste or drop images directly. Paste \\(…\\), $…$, or $$…$$ to render formulas, then click a formula to edit it.',
+        )}
       </div>
       <EditorContent editor={editor} />
     </>

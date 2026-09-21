@@ -3,6 +3,7 @@ import { Cloud, CloudOff, LogIn, RefreshCw, ShieldCheck, UserPlus } from 'lucide
 import type { CloudSession } from '../cloud'
 import { CloudApiError } from '../cloud'
 import { Modal } from './Modal'
+import { useI18n } from '../i18n'
 
 type SyncState = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'unavailable'
 
@@ -23,6 +24,7 @@ export default function Account({
   onLogout: () => Promise<void>
   onClose: () => void
 }) {
+  const { locale, pick } = useI18n()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -38,7 +40,7 @@ export default function Account({
       setError(
         reason instanceof CloudApiError || reason instanceof Error
           ? reason.message
-          : '操作失败，请稍后重试。',
+          : pick('操作失败，请稍后重试。', 'Something went wrong. Please try again.'),
       )
     } finally {
       setBusy(false)
@@ -52,13 +54,13 @@ export default function Account({
 
   if (session)
     return (
-      <Modal title="账户与云同步" onClose={onClose}>
+      <Modal title={pick('账户与云同步', 'Account & cloud sync')} onClose={onClose}>
         <div className="account-hero">
           <span className="feature-icon">
             <Cloud size={24} />
           </span>
           <div>
-            <h3>已连接云端</h3>
+            <h3>{pick('已连接云端', 'Connected to cloud')}</h3>
             <p>{session.user.email}</p>
           </div>
         </div>
@@ -66,15 +68,15 @@ export default function Account({
           <div>
             <strong>
               {syncState === 'syncing' || syncState === 'checking'
-                ? '正在同步…'
+                ? pick('正在同步…', 'Syncing…')
                 : syncState === 'error'
-                  ? '等待重新同步'
-                  : '本地与云端已连接'}
+                  ? pick('等待重新同步', 'Waiting to retry')
+                  : pick('本地与云端已连接', 'Local and cloud are connected')}
             </strong>
             <span>
               {lastSynced
-                ? `上次同步 ${new Date(lastSynced).toLocaleString('zh-CN')}`
-                : '首次同步将在连接后自动完成'}
+                ? pick(`上次同步 ${new Date(lastSynced).toLocaleString(locale)}`, `Last synced ${new Date(lastSynced).toLocaleString(locale)}`)
+                : pick('首次同步将在连接后自动完成', 'The first sync starts automatically after connecting')}
             </span>
           </div>
           <span className={`connection-dot ${syncState === 'synced' ? 'connected' : ''}`} />
@@ -86,7 +88,10 @@ export default function Account({
         ) : null}
         <div className="privacy-note">
           <ShieldCheck size={20} />
-          <p>笔记仍会先保存在本机；联网时同步文字、图片、手写内容、闪卡和复习进度。AI Key 不会上传。</p>
+          <p>{pick(
+            '笔记仍会先保存在本机；联网时同步文字、图片、手写内容、闪卡和复习进度。AI Key 不会上传。',
+            'Notes are saved locally first. Text, images, drawings, flashcards, and review progress sync when online. Your AI key is never uploaded.',
+          )}</p>
         </div>
         <div className="modal-actions account-actions">
           <button
@@ -95,31 +100,34 @@ export default function Account({
             onClick={() => void run(onSync)}
           >
             <RefreshCw size={16} className={syncState === 'syncing' ? 'spin' : ''} />
-            立即同步
+            {pick('立即同步', 'Sync now')}
           </button>
           <button className="button plain" disabled={busy} onClick={() => void run(onLogout)}>
-            退出登录
+            {pick('退出登录', 'Sign out')}
           </button>
         </div>
       </Modal>
     )
 
   return (
-    <Modal title="登录 Orion Note Learn" onClose={onClose}>
+    <Modal title={pick('登录 Orion Note Learn', 'Sign in to Orion Note Learn')} onClose={onClose}>
       <div className="account-hero">
         <span className="feature-icon">{syncState === 'unavailable' ? <CloudOff size={24} /> : <Cloud size={24} />}</span>
         <div>
-          <h3>换设备，笔记接着写</h3>
-          <p>本地优先保存，登录后自动同步到你的私有空间。</p>
+          <h3>{pick('换设备，笔记接着写', 'Keep writing on every device')}</h3>
+          <p>{pick('本地优先保存，登录后自动同步到你的私有空间。', 'Save locally first, then sync automatically to your private space.')}</p>
         </div>
       </div>
       {syncState === 'unavailable' ? (
         <p className="error-box" role="alert">
-          当前部署尚未配置 VITE_SYNC_API_URL。部署 Worker 后在 Vercel 添加该环境变量即可启用。
+          {pick(
+            '当前部署尚未配置 VITE_SYNC_API_URL。部署 Worker 后在 Vercel 添加该环境变量即可启用。',
+            'VITE_SYNC_API_URL is not configured for this deployment. Add it in Vercel after deploying the Worker.',
+          )}
         </p>
       ) : (
         <>
-          <div className="auth-tabs" role="tablist" aria-label="账户操作">
+          <div className="auth-tabs" role="tablist" aria-label={pick('账户操作', 'Account actions')}>
             <button
               type="button"
               role="tab"
@@ -130,7 +138,7 @@ export default function Account({
                 setError('')
               }}
             >
-              登录
+              {pick('登录', 'Sign in')}
             </button>
             <button
               type="button"
@@ -142,12 +150,12 @@ export default function Account({
                 setError('')
               }}
             >
-              注册
+              {pick('注册', 'Create account')}
             </button>
           </div>
           <form onSubmit={submit}>
             <label className="field">
-              邮箱
+              {pick('邮箱', 'Email')}
               <input
                 required
                 type="email"
@@ -159,7 +167,7 @@ export default function Account({
               />
             </label>
             <label className="field">
-              密码
+              {pick('密码', 'Password')}
               <input
                 required
                 type="password"
@@ -168,7 +176,7 @@ export default function Account({
                 autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                placeholder="至少 10 个字符"
+                placeholder={pick('至少 10 个字符', 'At least 10 characters')}
               />
             </label>
             {error ? (
@@ -178,12 +186,19 @@ export default function Account({
             ) : null}
             <div className="privacy-note">
               <ShieldCheck size={20} />
-              <p>密码经过 PBKDF2 加盐哈希后存入 D1；会话有效期 30 天。云同步不包含你的 AI Key。</p>
+              <p>{pick(
+                '密码会在设备端经过高强度推导，D1 只保存加盐后的证明哈希；会话有效期 30 天。云同步不包含你的 AI Key。',
+                'Your password is strengthened on-device, and D1 stores only a salted proof hash. Sessions last 30 days. Cloud sync never includes your AI key.',
+              )}</p>
             </div>
             <div className="modal-actions">
               <button className="button primary" disabled={busy}>
                 {mode === 'login' ? <LogIn size={16} /> : <UserPlus size={16} />}
-                {busy ? '请稍候…' : mode === 'login' ? '登录并同步' : '创建账户'}
+                {busy
+                  ? pick('请稍候…', 'Please wait…')
+                  : mode === 'login'
+                    ? pick('登录并同步', 'Sign in & sync')
+                    : pick('创建账户', 'Create account')}
               </button>
             </div>
           </form>

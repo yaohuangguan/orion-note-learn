@@ -175,6 +175,20 @@ test('account sync restores notes and R2 images on another device', async ({ pag
   )
   await secondContext.close()
 })
+test('English UI can be selected and persists after reload', async ({ page }) => {
+  await ready(page)
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  await page.getByLabel('界面语言').selectOption('en')
+  const settings = page.getByRole('dialog', { name: 'AI & preferences' })
+  await expect(settings.getByText('Your AI, your key')).toBeVisible()
+  await settings.getByRole('button', { name: 'Save settings' }).click()
+
+  await expect(page.getByRole('button', { name: 'New note', exact: false }).first()).toBeVisible()
+  await expect(page.getByLabel('Search notes')).toBeVisible()
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'All notes', exact: false })).toBeVisible()
+  await expect(page.getByLabel('Note title')).toBeVisible()
+})
 test('handwriting supports strokes, undo, redo and reload', async ({ page }) => {
   await ready(page)
   await page.getByRole('tab', { name: '手写画板' }).click()
