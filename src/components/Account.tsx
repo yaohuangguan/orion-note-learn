@@ -26,8 +26,6 @@ export default function Account({
 }) {
   const { locale, pick } = useI18n()
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -165,8 +163,6 @@ export default function Account({
                 type="email"
                 autoComplete="email"
                 maxLength={254}
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
               />
             </label>
@@ -179,8 +175,6 @@ export default function Account({
                 minLength={10}
                 maxLength={128}
                 autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
                 placeholder={pick('至少 10 个字符', 'At least 10 characters')}
               />
             </label>

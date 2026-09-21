@@ -204,6 +204,10 @@ test('account registration submits browser-autofilled DOM values', async ({ page
     ;(input as HTMLInputElement).value = value
   }, password)
 
+  // Autofilled values must survive React re-renders when switching auth modes.
+  await account.getByRole('tab', { name: '登录' }).click()
+  await account.getByRole('tab', { name: '注册' }).click()
+
   await account.getByRole('button', { name: '创建账户' }).click()
 
   await expect.poll(() => captured.registerBody?.email).toBe(email)
