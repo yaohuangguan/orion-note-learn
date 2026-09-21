@@ -28,6 +28,8 @@ import {
   CloudOff,
   LoaderCircle,
   Leaf,
+  Share2,
+  Copy,
 } from 'lucide-react'
 import { marked } from 'marked'
 import {
@@ -66,6 +68,8 @@ import {
   saveCloudWorkspace,
   uploadCloudImage,
   verifyCloudSession,
+  publishPublicShare,
+  revokePublicShare,
   type CloudSession,
   CloudApiError,
 } from './cloud'
@@ -74,7 +78,7 @@ import { useI18n } from './i18n'
 const Drawing = lazy(() => import('./components/Drawing'))
 const AIPanel = lazy(() => import('./components/AIPanel'))
 type View = 'editor' | 'library' | 'review' | 'trash'
-type Dialog = 'settings' | 'account' | 'folder' | 'card' | 'import' | 'properties' | null
+type Dialog = 'settings' | 'account' | 'folder' | 'card' | 'import' | 'properties' | 'share' | null
 type CloudState = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'unavailable'
 function initialSettings(): AISettings {
   const p = providers[0]
@@ -113,7 +117,9 @@ export default function App() {
   const cloudUploadInFlight = useRef(false)
   const cloudPendingWorkspace = useRef<Workspace | null>(null)
   const cloudLastPushed = useRef<Workspace | null>(null)
-  const [selectedId, setSelectedId] = useState('welcome')
+  const [selectedId, setSelectedId] = useState(
+    () => new URLSearchParams(window.location.search).get('note') || 'welcome',
+  )
   const [view, setView] = useState<View>('editor')
   const [folder, setFolder] = useState('')
   const [favorites, setFavorites] = useState(false)
@@ -133,6 +139,10 @@ export default function App() {
   const [importError, setImportError] = useState('')
   const [tagDraft, setTagDraft] = useState('')
   const [folderChoice, setFolderChoice] = useState('')
+  const [sharing, setSharing] = useState(false)
+  const [shareId, setShareId] = useState('')
+  const [shareUrl, setShareUrl] = useState('')
+  const [shareError, setShareError] = useState('')
   const active = data?.notes.filter((n) => !n.deletedAt) || []
   const note = active.find((n) => n.id === selectedId) || active[0]
   const dueCount =
@@ -460,6 +470,79 @@ export default function App() {
       ? pick('账户已创建，笔记正在上传云端', 'Account created. Your notes are uploading.')
       : pick('登录成功，笔记已连接云端', 'Signed in. Your notes are connected to the cloud.'))
   }
+  async function shareCurrentNote() {
+    if (!note || !data) return
+    if (!cloudSession) {
+      notify(pick('登录后才能创建公开分享链接', 'Sign in before creating a public share link.'))
+      setDialog('account')
+      return
+    }
+    setSharing(true)
+    setShareError('')
+    try {
+      let publicNote = note
+      if (/data:image\//i.test(note.html)) {
+        const prepared = await migrateWorkspaceImages(
+          {
+            version: 1,
+            notes: [note],
+            cards: [],
+            folders: [note.folder],
+            reviewLog: [],
+          },
+          cloudSession,
+        )
+        publicNote = prepared.workspace.notes[0]
+        if (prepared.changed) updateNote(note.id, { html: publicNote.html })
+      }
+      const result = await publishPublicShare(cloudSession, publicNote)
+      const url = `${window.location.origin}/share/${result.id}`
+      setShareId(result.id)
+      setShareUrl(url)
+      setDialog('share')
+    } catch (reason) {
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : pick('创建分享链接失败，请稍后重试。', 'Could not create the share link. Try again.')
+      setShareError(message)
+      setDialog('share')
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  async function stopSharing() {
+    if (!cloudSession || !shareId) return
+    setSharing(true)
+    setShareError('')
+    try {
+      await revokePublicShare(cloudSession, shareId)
+      setShareId('')
+      setShareUrl('')
+      setDialog(null)
+      notify(pick('已停止分享，这个公开链接不再可访问', 'Sharing stopped. The public link is no longer available.'))
+    } catch (reason) {
+      setShareError(
+        reason instanceof Error
+          ? reason.message
+          : pick('停止分享失败，请稍后重试。', 'Could not stop sharing. Try again.'),
+      )
+    } finally {
+      setSharing(false)
+    }
+  }
+
+  async function copyShareLink() {
+    if (!shareUrl) return
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      notify(pick('分享链接已复制', 'Share link copied.'))
+    } catch {
+      notify(pick('请手动复制分享链接', 'Copy the share link manually.'))
+    }
+  }
+
   async function syncNow() {
     if (!cloudSession || !data) return
     if (cloudReadyFor.current !== cloudSession.token) {
@@ -724,6 +807,15 @@ export default function App() {
                   onClick={() => updateNote(note.id, { favorite: !note.favorite })}
                 >
                   <Star size={18} fill={note.favorite ? 'currentColor' : 'none'} />
+                </button>
+                <button
+                  className="icon-button"
+                  title={pick('分享文章', 'Share article')}
+                  aria-label={pick('分享文章', 'Share article')}
+                  disabled={sharing}
+                  onClick={() => void shareCurrentNote()}
+                >
+                  <Share2 size={18} />
                 </button>
                 <details className="export-menu">
                   <summary className="button plain">
@@ -1097,6 +1189,60 @@ export default function App() {
           onLogout={logoutAccount}
           onClose={() => setDialog(null)}
         />
+      ) : null}
+      {dialog === 'share' ? (
+        <Modal title={pick('分享这篇笔记', 'Share this note')} onClose={() => setDialog(null)}>
+          {shareError ? (
+            <p className="error-box" role="alert">
+              {shareError}
+            </p>
+          ) : shareUrl ? (
+            <>
+              <div className="share-dialog-intro">
+                <Share2 size={22} />
+                <div>
+                  <strong>{pick('公开链接已生成', 'Public link created')}</strong>
+                  <p>
+                    {pick(
+                      '任何拿到链接的人都可以直接阅读文章，不需要登录。再次点击分享会更新这个链接里的内容。',
+                      'Anyone with this link can read the article without signing in. Sharing again updates the content at the same link.',
+                    )}
+                  </p>
+                </div>
+              </div>
+              <label className="field">
+                {pick('公开文章链接', 'Public article link')}
+                <div className="share-link-row">
+                  <input readOnly value={shareUrl} onFocus={(event) => event.currentTarget.select()} />
+                  <button type="button" className="button secondary" onClick={() => void copyShareLink()}>
+                    <Copy size={15} />
+                    {pick('复制', 'Copy')}
+                  </button>
+                </div>
+              </label>
+              <div className="privacy-note">
+                <BookOpen size={20} />
+                <p>
+                  {pick(
+                    '公开页面只展示这篇文章的标题、标签和正文，不会公开你的邮箱、其他笔记或 AI Key。',
+                    'The public page shows only this article title, tags, and content. Your email, other notes, and AI key stay private.',
+                  )}
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="button danger" disabled={sharing} onClick={() => void stopSharing()}>
+                  {sharing ? pick('正在停止…', 'Stopping…') : pick('停止分享', 'Stop sharing')}
+                </button>
+                <a className="button primary" href={shareUrl} target="_blank" rel="noreferrer">
+                  {pick('打开公开文章', 'Open public article')}
+                  <ArrowUpRight size={15} />
+                </a>
+              </div>
+            </>
+          ) : (
+            <div className="loading-inline">{pick('正在创建分享链接…', 'Creating share link…')}</div>
+          )}
+        </Modal>
       ) : null}
       {dialog === 'folder' ? (
         <Modal title={pick('新建笔记本', 'New notebook')} onClose={() => setDialog(null)}>

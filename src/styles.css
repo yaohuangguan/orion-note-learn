@@ -2541,3 +2541,223 @@ svg {
     margin: 18mm;
   }
 }
+
+
+/* Public shared article */
+.share-dialog-intro {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 15px;
+  margin-bottom: 18px;
+  border: 1px solid #e2e8de;
+  border-radius: 9px;
+  background: #f7f9f4;
+}
+.share-dialog-intro > svg {
+  color: var(--green);
+  margin-top: 1px;
+}
+.share-dialog-intro strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.share-dialog-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.share-link-row {
+  display: flex;
+  gap: 8px;
+}
+.share-link-row input {
+  flex: 1;
+}
+.shared-page {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% -20%, #edf3e8 0, transparent 35%),
+    #fbfcf9;
+  color: #2f4237;
+}
+.shared-topbar {
+  height: 68px;
+  padding: 0 28px;
+  border-bottom: 1px solid #e6eae2;
+  background: rgba(251, 252, 249, 0.92);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.shared-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+}
+.shared-brand .brand-mark {
+  width: 31px;
+  height: 34px;
+  border-radius: 9px 9px 10px 3px;
+}
+.shared-brand small {
+  display: block;
+  margin-top: 3px;
+  color: #899487;
+  font: 7px/1.2 Inter, sans-serif;
+  letter-spacing: 1.8px;
+}
+.shared-article-shell {
+  width: min(860px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: 64px 0 80px;
+}
+.shared-article {
+  background: #fff;
+  border: 1px solid #e8ece5;
+  border-radius: 15px;
+  padding: clamp(28px, 5vw, 64px);
+  box-shadow: 0 20px 60px #293c2d0a;
+}
+.shared-kicker {
+  margin-bottom: 18px;
+  color: #829079;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.7px;
+}
+.shared-article > h1 {
+  max-width: 720px;
+  margin: 0;
+  color: #283d31;
+  font-family: var(--serif);
+  font-size: clamp(32px, 6vw, 52px);
+  font-weight: 600;
+  line-height: 1.13;
+  letter-spacing: -1.3px;
+}
+.shared-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 13px 18px;
+  align-items: center;
+  margin: 18px 0 38px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #edf0ea;
+  color: #90998d;
+  font-size: 12px;
+}
+.shared-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.shared-tags > span {
+  border: 1px solid #e3e8de;
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #fafbf8;
+  color: #70806c;
+}
+.shared-note-prose {
+  min-height: 120px;
+  font-size: 15px;
+  line-height: 1.95;
+}
+.shared-note-prose > p:first-child {
+  color: inherit;
+  font-size: inherit;
+}
+.shared-save-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  margin-top: 18px;
+  padding: 18px 20px;
+  border: 1px solid #e1e7dc;
+  border-radius: 12px;
+  background: #f4f7ef;
+}
+.shared-save-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #e5eddc;
+  color: var(--green);
+}
+.shared-save-card strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #344b3c;
+}
+.shared-save-card p {
+  margin: 0;
+  color: #7c887a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.shared-state-page {
+  display: grid;
+  min-height: 100dvh;
+  place-items: center;
+  align-content: center;
+  gap: 12px;
+  padding: 32px;
+  text-align: center;
+}
+.shared-state-page > svg {
+  color: var(--green);
+}
+.shared-state-page h1,
+.shared-state-page p {
+  margin: 0;
+}
+.shared-state-page p {
+  max-width: 520px;
+  color: var(--muted);
+}
+.shared-loading {
+  padding: 40px 0;
+  color: var(--muted);
+}
+@media (max-width: 700px) {
+  .shared-topbar {
+    height: 60px;
+    padding: 0 14px;
+  }
+  .shared-topbar > .button {
+    padding-inline: 10px;
+  }
+  .shared-article-shell {
+    width: min(100% - 20px, 860px);
+    padding: 22px 0 50px;
+  }
+  .shared-article {
+    padding: 26px 20px 34px;
+    border-radius: 11px;
+  }
+  .shared-meta {
+    margin-bottom: 26px;
+  }
+  .shared-save-card {
+    grid-template-columns: auto 1fr;
+  }
+  .shared-save-card > .button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+  .share-link-row {
+    flex-direction: column;
+  }
+}
