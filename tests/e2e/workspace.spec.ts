@@ -214,6 +214,53 @@ test('account registration submits browser-autofilled DOM values', async ({ page
   expect(captured.registerBody?.passwordProof).toMatch(/^[A-Za-z0-9_-]{43}$/)
 })
 
+test('public share opens without login and can be saved after signing in', async ({ page, browser }) => {
+  const ownerEmail = `share-owner-${Date.now()}@example.com`
+  const readerEmail = `share-reader-${Date.now()}@example.com`
+  const password = 'test-password-123'
+
+  await ready(page)
+  await page.getByRole('button', { name: '账户与云同步' }).click()
+  const ownerAccount = page.getByRole('dialog', { name: '登录 Orion Note Learn' })
+  await ownerAccount.getByRole('tab', { name: '注册' }).click()
+  await ownerAccount.getByLabel('邮箱').fill(ownerEmail)
+  await ownerAccount.getByLabel('密码').fill(password)
+  await ownerAccount.getByRole('button', { name: '创建账户' }).click()
+  await expect(page.getByRole('dialog', { name: '账户与云同步' })).toContainText('已连接云端')
+  await page.getByRole('button', { name: '关闭弹窗' }).click()
+
+  await page.getByRole('button', { name: '新建笔记', exact: false }).first().click()
+  await page.getByLabel('笔记标题', { exact: true }).fill('可以公开阅读的 Orion 文章')
+  await page.getByRole('textbox', { name: '笔记正文' }).fill('这篇文章不登录也可以阅读，登录以后可以收藏。')
+  await page.getByRole('button', { name: '分享文章' }).click()
+
+  const shareDialog = page.getByRole('dialog', { name: '分享这篇笔记' })
+  const shareInput = shareDialog.getByLabel('公开文章链接')
+  await expect(shareInput).toHaveValue(/\/share\/[A-Za-z0-9_-]{20,64}$/)
+  const shareUrl = await shareInput.inputValue()
+
+  const readerContext = await browser.newContext()
+  const reader = await readerContext.newPage()
+  await reader.goto(shareUrl)
+  await expect(reader.getByRole('heading', { name: '可以公开阅读的 Orion 文章' })).toBeVisible()
+  await expect(reader.getByText('这篇文章不登录也可以阅读，登录以后可以收藏。')).toBeVisible()
+  await expect(reader.getByRole('button', { name: '登录后收藏' })).toBeVisible()
+
+  await reader.getByRole('button', { name: '登录后收藏' }).click()
+  const readerAccount = reader.getByRole('dialog', { name: '登录 Orion 后收藏' })
+  await readerAccount.getByRole('tab', { name: '注册' }).click()
+  await readerAccount.getByLabel('邮箱').fill(readerEmail)
+  await readerAccount.getByLabel('密码').fill(password)
+  await readerAccount.getByRole('button', { name: '创建账户并收藏' }).click()
+
+  await expect(reader).toHaveURL(/\/?\?note=/)
+  await expect(reader.getByLabel('笔记标题', { exact: true })).toHaveValue('可以公开阅读的 Orion 文章')
+  await expect(reader.getByRole('textbox', { name: '笔记正文' })).toContainText(
+    '这篇文章不登录也可以阅读，登录以后可以收藏。',
+  )
+  await readerContext.close()
+})
+
 test('English UI can be selected and persists after reload', async ({ page }) => {
   await ready(page)
   await page.getByRole('button', { name: '设置', exact: true }).click()
