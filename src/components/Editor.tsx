@@ -21,9 +21,11 @@ import {
   Heading3,
   ImagePlus,
   Sigma,
+  ScanText,
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useI18n } from '../i18n'
+import OcrImport from './OcrImport'
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
 const SAFE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
@@ -102,6 +104,7 @@ export default function NoteEditor({
   const editorRef = useRef<Editor | null>(null)
   const fileInput = useRef<HTMLInputElement | null>(null)
   const [message, setMessage] = useState('')
+  const [ocrOpen, setOcrOpen] = useState(false)
   callback.current = onChange
   imageUpload.current = onImageUpload
 
@@ -231,6 +234,21 @@ export default function NoteEditor({
     if (image) void insertImage(image, editor)
     event.target.value = ''
   }
+
+  const insertOcrText = (text: string) => {
+    const paragraphs = text
+      .split(/\r?\n/)
+      .map((line) =>
+        line
+          ? {
+              type: 'paragraph',
+              content: [{ type: 'text', text: line }],
+            }
+          : { type: 'paragraph' },
+      )
+    editor.chain().focus().insertContent(paragraphs).run()
+    showMessage(pick('OCR 文字已插入当前笔记', 'OCR text inserted into this note.'))
+  }
   const buttons = [
     {
       label: pick('二级标题', 'Heading 2'),
@@ -320,6 +338,14 @@ export default function NoteEditor({
         >
           <ImagePlus size={17} />
         </button>
+        <button
+          className="icon-button"
+          title={pick('拍照 / 图片 OCR', 'Photo / image OCR')}
+          aria-label={pick('拍照 / 图片 OCR', 'Photo / image OCR')}
+          onClick={() => setOcrOpen(true)}
+        >
+          <ScanText size={17} />
+        </button>
         <input
           ref={fileInput}
           className="sr-only"
@@ -355,6 +381,9 @@ export default function NoteEditor({
         )}
       </div>
       <EditorContent editor={editor} />
+      {ocrOpen ? (
+        <OcrImport onInsert={insertOcrText} onClose={() => setOcrOpen(false)} />
+      ) : null}
     </>
   )
 }

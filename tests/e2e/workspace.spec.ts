@@ -105,6 +105,47 @@ test('pasted images and LaTeX formulas render and persist', async ({ page }) => 
     /^data:image\/png;base64,/,
   )
 })
+test('local OCR imports recognized text without uploading the source image', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__ORION_OCR_TEST__ = async () => [
+      { text: '无线通信与 SNR', score: 0.97 },
+      { text: 'Signal to Noise Ratio', score: 0.92 },
+      { text: '手写中文也可以先识别再修改', score: 0.68 },
+    ]
+  })
+
+  const uploadedRequests: string[] = []
+  page.on('request', (request) => {
+    if (request.method() !== 'GET') uploadedRequests.push(request.url())
+  })
+
+  await ready(page)
+  await page.getByRole('button', { name: '拍照 / 图片 OCR' }).click()
+  const dialog = page.getByRole('dialog', { name: '拍照 / 图片 OCR 导入' })
+  await expect(dialog.getByText('图片不会上传，也不会存储')).toBeVisible()
+
+  await dialog.getByLabel('上传图片识别文字').setInputFiles({
+    name: 'handwritten-notes.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      'base64',
+    ),
+  })
+
+  const result = dialog.getByLabel('OCR 识别文字')
+  await expect(result).toHaveValue(/无线通信与 SNR/)
+  await dialog.getByText('查看识别置信度').click()
+  await expect(dialog.getByText('68%')).toBeVisible()
+  await result.fill('无线通信与 SNR\nSignal to Noise Ratio\n我修正后的手写中文')
+  await dialog.getByRole('button', { name: '插入当前笔记' }).click()
+
+  const editor = page.getByRole('textbox', { name: '笔记正文' })
+  await expect(editor).toContainText('无线通信与 SNR')
+  await expect(editor).toContainText('我修正后的手写中文')
+  expect(uploadedRequests.some((url) => url.includes('/v1/images'))).toBe(false)
+})
+
 test('account sync restores notes and R2 images on another device', async ({ page, browser }) => {
   const email = `cloud-${Date.now()}@example.com`
   const password = 'test-password-123'
