@@ -853,7 +853,12 @@ async function freeAi(request: Request, env: Env) {
 }
 
 function allowedAiCompletionUrl(baseUrl: string, extraHosts: string) {
-  const url = new URL(baseUrl)
+  let url: URL
+  try {
+    url = new URL(baseUrl)
+  } catch {
+    throw new ApiError(400, 'AI 接口地址不正确。')
+  }
   const allowed = new Set([
     'api.openai.com',
     'api.deepseek.com',
