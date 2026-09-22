@@ -3077,3 +3077,63 @@ svg {
   font-size: 12px;
   line-height: 1.6;
 }
+
+
+/* AI provider privacy + free trial */
+.ai-free-callout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 13px 14px;
+  margin: 4px 0 14px;
+  border: 1px solid #dce8d4;
+  border-radius: 9px;
+  background: #f5f9f1;
+}
+.ai-free-callout > svg {
+  margin-top: 2px;
+  color: var(--green);
+}
+.ai-free-callout strong,
+.ai-free-callout span {
+  display: block;
+}
+.ai-free-callout strong {
+  margin-bottom: 4px;
+  color: #3c5845;
+  font-size: 13px;
+}
+.ai-free-callout p {
+  margin: 0 0 7px;
+  color: #7f8d7a;
+  font-size: 12px;
+  line-height: 1.65;
+}
+.ai-free-callout span {
+  color: #789064;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.free-ai-status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0;
+  padding: 9px 10px;
+  border: 1px solid #e0ead8;
+  border-radius: 8px;
+  background: #f7faf4;
+  color: #718267;
+  font-size: 11px;
+}
+.free-ai-status > svg {
+  flex: none;
+  color: var(--green);
+}
+.free-ai-status > span {
+  flex: 1;
+}
+.free-ai-status .text-button {
+  font-size: 11px;
+}
