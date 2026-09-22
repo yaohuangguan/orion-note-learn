@@ -25,9 +25,26 @@ import {
 } from 'lucide-react'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { useI18n } from '../i18n'
+import { PRIVATE_IMAGE_ATTR } from '../private-images'
 import OcrImport from './OcrImport'
 
-const MAX_IMAGE_BYTES = 12 * 1024 * 1024
+const OrionImage = Image.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      privateImageId: {
+        default: null,
+        parseHTML: (element) => element.getAttribute(PRIVATE_IMAGE_ATTR),
+        renderHTML: (attributes) =>
+          attributes.privateImageId
+            ? { [PRIVATE_IMAGE_ATTR]: String(attributes.privateImageId) }
+            : {},
+      },
+    }
+  },
+})
+
+const MAX_IMAGE_BYTES = 12_000_000
 const SAFE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'])
 
 function readImage(file: File) {
@@ -174,7 +191,7 @@ export default function NoteEditor({
         link: { openOnClick: false, protocols: ['https', 'http', 'mailto'] },
       }),
       Highlight,
-      Image.configure({ allowBase64: true, HTMLAttributes: { crossorigin: 'anonymous' } }),
+      OrionImage.configure({ allowBase64: true, HTMLAttributes: { crossorigin: 'anonymous' } }),
       Mathematics.configure({
         katexOptions: { throwOnError: false, strict: false },
         inlineOptions: { onClick: (node, pos) => editMath('inline', node, pos) },

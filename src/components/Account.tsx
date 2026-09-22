@@ -90,8 +90,8 @@ export default function Account({
         <div className="privacy-note">
           <ShieldCheck size={20} />
           <p>{pick(
-            '标题、正文、标签、手写内容、闪卡和复习进度会在浏览器端加密后再上传，Orion 服务端只保存密文。图片附件目前使用 HTTPS 加密传输和云端静态加密，尚未端到端加密。AI Key 不会上传。',
-            'Titles, note text, tags, drawings, flashcards, and review progress are encrypted in your browser before upload, so Orion stores only ciphertext. Image attachments currently use encrypted transport and encrypted cloud storage, but are not yet end-to-end encrypted. Your AI key is never uploaded.',
+            '标题、正文、标签、手写内容、闪卡、复习进度和私人图片附件都会在浏览器端加密后再上传。D1 与 R2 只保存密文，服务端不会收到私人笔记的解密密钥。只有你主动公开分享的文章会生成可阅读副本；AI Key 不会上传。',
+            'Titles, note text, tags, drawings, flashcards, review progress, and private image attachments are encrypted in your browser before upload. D1 and R2 store ciphertext only, and the service never receives the decryption key for private notes. Only articles you explicitly publish create readable copies. Your AI key is never uploaded.',
           )}</p>
         </div>
         <div className="modal-actions account-actions">
@@ -186,8 +186,8 @@ export default function Account({
             <div className="privacy-note">
               <ShieldCheck size={20} />
               <p>{pick(
-                '密码在设备端推导登录证明和私人笔记加密密钥；密码本身不会上传。私人笔记内容在离开浏览器前使用 AES-256-GCM 加密，服务端无法读取正文。主动创建的公开分享文章除外。',
-                'Your password derives both the sign-in proof and private-note encryption key on-device; the password itself is never uploaded. Private note content is encrypted with AES-256-GCM before leaving your browser, so the service cannot read it. Articles you explicitly publish are the exception.',
+                '密码只在设备端用于推导登录证明和私人空间密钥，密码本身不会上传。私人笔记与图片附件在离开浏览器前使用 AES-256-GCM 加密；服务端存储的是密文。主动创建的公开分享文章除外。',
+                'Your password is used on-device to derive the sign-in proof and private vault key; the password itself is never uploaded. Private notes and image attachments are encrypted with AES-256-GCM before leaving your browser, so the service stores ciphertext. Articles you explicitly publish are the exception.',
               )}</p>
             </div>
             <div className="modal-actions">

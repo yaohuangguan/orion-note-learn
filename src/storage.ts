@@ -2,6 +2,7 @@ import { openDB } from 'idb'
 import DOMPurify from 'dompurify'
 import { workspaceSchema, type Workspace } from './domain'
 import { seedWorkspace } from './seed'
+import { PRIVATE_IMAGE_ATTR } from './private-images'
 
 const db = openDB('orion-note-learn', 1, {
   upgrade(db) {
@@ -40,7 +41,17 @@ export function saveWorkspace(data: Workspace) {
 export function sanitizeHtml(html: string) {
   const clean = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    ADD_ATTR: ['data-type', 'data-latex', 'src', 'alt', 'title', 'width', 'height', 'crossorigin'],
+    ADD_ATTR: [
+      'data-type',
+      'data-latex',
+      PRIVATE_IMAGE_ATTR,
+      'src',
+      'alt',
+      'title',
+      'width',
+      'height',
+      'crossorigin',
+    ],
     FORBID_TAGS: ['video', 'audio', 'iframe', 'style', 'form', 'input', 'object', 'embed'],
     FORBID_ATTR: ['style', 'srcset'],
   })
