@@ -103,8 +103,8 @@ export default function Settings({
         </div>
         <p className="field-help">
           {pick(
-            '笔记始终先保存在当前浏览器。登录云账户后，笔记数据同步到 D1，粘贴图片存入 R2；建议仍定期导出完整备份。',
-            'Notes are always saved in this browser first. After signing in, note data syncs to D1 and pasted images are stored in R2. Regular full backups are still recommended.',
+            '笔记始终先保存在当前浏览器。登录后，标题、正文、标签、手写、闪卡和复习数据会在浏览器内使用 AES-256-GCM 加密后再同步到 D1；服务端只看到密文。图片附件目前存入 R2，并使用 HTTPS 加密传输和云端静态加密，但尚未端到端加密。只有你主动“公开分享”的文章会以可阅读形式发布。',
+            'Notes are always saved in this browser first. After sign-in, titles, note text, tags, drawings, flashcards, and review data are encrypted in-browser with AES-256-GCM before syncing to D1, so the service sees ciphertext only. Image attachments are currently stored in R2 with encrypted transport and encrypted-at-rest storage, but are not yet end-to-end encrypted. Only articles you explicitly publish are made readable publicly.',
           )}
         </p>
         <div className="modal-actions">
