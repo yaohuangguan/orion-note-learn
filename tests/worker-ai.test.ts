@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractAiText } from '../worker/index'
+import { extractAiText } from '../src/ai-response'
 
 describe('Workers AI response parsing', () => {
   it('reads legacy response text', () => {
