@@ -237,6 +237,14 @@ export default function App() {
       setCloudLastSynced(remote.updatedAt)
       setCloudState('synced')
       if (JSON.stringify(merged) !== JSON.stringify(workspace)) setData(merged)
+      if (!remote.encrypted) {
+        await syncCloudSnapshot(merged, verified)
+        notify(pick(
+          '旧版云端笔记已升级为端到端加密存储',
+          'Your legacy cloud notes were upgraded to end-to-end encrypted storage.',
+        ))
+        return
+      }
       if (JSON.stringify(merged) !== JSON.stringify(remote.workspace))
         notify(pick('本机与云端笔记已合并，正在上传最新版本', 'Local and cloud notes were merged. Uploading the latest version.'))
     } catch (error) {
@@ -754,7 +762,7 @@ export default function App() {
           <div className="local-footer">
             <span className={cloudSession && cloudState === 'synced' ? 'connected' : ''} />
             {cloudSession
-              ? pick('本地优先 · 云端同步', 'Local-first · Cloud sync')
+              ? pick('本地优先 · 端到端加密同步', 'Local-first · End-to-end encrypted sync')
               : pick('数据保存在此设备', 'Data saved on this device')}
           </div>
         </div>
