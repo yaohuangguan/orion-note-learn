@@ -56,6 +56,12 @@ export type Workspace = z.infer<typeof workspaceSchema>
 export type AISettings = { provider: string; baseUrl: string; model: string; apiKey: string }
 export const providers = [
   {
+    id: 'orion-free',
+    name: 'Orion Free',
+    baseUrl: '',
+    model: '@cf/zai-org/glm-4.7-flash',
+  },
+  {
     id: 'deepseek',
     name: 'DeepSeek',
     baseUrl: 'https://api.deepseek.com/v1',
