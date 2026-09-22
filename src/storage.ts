@@ -17,7 +17,7 @@ function safeImageSource(src: string) {
     const service = new URL(cloud)
     return (
       source.origin === service.origin &&
-      /^\/v1\/images\/[A-Za-z0-9_-]{40,64}$/.test(source.pathname)
+      /^\/v1\/(?:images|private-images)\/[A-Za-z0-9_-]{40,64}$/.test(source.pathname)
     )
   } catch {
     return false
@@ -40,7 +40,7 @@ export function saveWorkspace(data: Workspace) {
 export function sanitizeHtml(html: string) {
   const clean = DOMPurify.sanitize(html, {
     USE_PROFILES: { html: true },
-    ADD_ATTR: ['data-type', 'data-latex', 'src', 'alt', 'title', 'width', 'height', 'crossorigin'],
+    ADD_ATTR: ['data-type', 'data-latex', 'data-orion-private-src', 'src', 'alt', 'title', 'width', 'height', 'crossorigin'],
     FORBID_TAGS: ['video', 'audio', 'iframe', 'style', 'form', 'input', 'object', 'embed'],
     FORBID_ATTR: ['style', 'srcset'],
   })
