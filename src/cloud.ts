@@ -6,6 +6,7 @@ import { currentLanguage } from './i18n'
 const SESSION_KEY = 'orion-cloud-session'
 const configuredUrl = (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/$/, '')
 const PASSWORD_ITERATIONS = 210_000
+const VAULT_ITERATIONS = 310_000
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
@@ -86,16 +87,17 @@ async function passwordMaterial(email: string, password: string) {
       256,
     ),
   )
-  const hkdf = await crypto.subtle.importKey('raw', proofBits, 'HKDF', false, ['deriveBits'])
+  // Derive the vault key independently from the raw password. The authentication
+  // proof sent to the server is therefore insufficient to derive or decrypt the vault.
   const vaultBits = new Uint8Array(
     await crypto.subtle.deriveBits(
       {
-        name: 'HKDF',
+        name: 'PBKDF2',
         hash: 'SHA-256',
-        salt: encoder.encode('orion-note-learn:vault:v1'),
-        info: encoder.encode(email),
+        salt: encoder.encode(`orion-note-learn:vault:v1:${email}`),
+        iterations: VAULT_ITERATIONS,
       },
-      hkdf,
+      material,
       256,
     ),
   )
