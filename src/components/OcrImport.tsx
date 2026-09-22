@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
-import { Camera, ImageUp, LockKeyhole, ScanText, ShieldCheck } from 'lucide-react'
+import { Camera, ImageUp, LockKeyhole, ScanText } from 'lucide-react'
 import { Modal } from './Modal'
 import PrivacyPromise from './PrivacyPromise'
 import { recognizeImageLocally, type OcrLine } from '../ocr'
