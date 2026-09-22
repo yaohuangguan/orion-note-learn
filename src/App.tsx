@@ -74,6 +74,7 @@ import {
   CloudApiError,
 } from './cloud'
 import { useI18n } from './i18n'
+import { usePwaInstall } from './pwa'
 
 const Drawing = lazy(() => import('./components/Drawing'))
 const AIPanel = lazy(() => import('./components/AIPanel'))
@@ -102,6 +103,7 @@ function date(value: number, locale: 'zh-CN' | 'en-US') {
 
 export default function App() {
   const { language, locale, pick } = useI18n()
+  const pwa = usePwaInstall()
   const [data, setData] = useState<Workspace | null>(null)
   const [loadError, setLoadError] = useState('')
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error'>('saving')
@@ -742,6 +744,19 @@ export default function App() {
             <Trash2 size={17} />
             {pick('回收站', 'Trash')}
           </button>
+          {pwa.canInstall ? (
+            <button
+              className="sidebar-utility"
+              onClick={() => {
+                void pwa.install().then((installed) => {
+                  if (installed) notify(pick('Orion 已安装到设备', 'Orion was installed on this device.'))
+                })
+              }}
+            >
+              <Download size={17} />
+              {pick('安装 Orion 应用', 'Install Orion app')}
+            </button>
+          ) : null}
           <button className="sidebar-utility" onClick={() => setDialog('settings')}>
             <SettingsIcon size={17} />
             {pick('设置', 'Settings')}
