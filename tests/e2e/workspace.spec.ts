@@ -135,6 +135,7 @@ test('local OCR imports recognized text without uploading the source image', asy
 
   const result = dialog.getByLabel('OCR 识别文字')
   await expect(result).toHaveValue(/无线通信与 SNR/)
+  await dialog.getByText('查看识别置信度').click()
   await expect(dialog.getByText('68%')).toBeVisible()
   await result.fill('无线通信与 SNR\nSignal to Noise Ratio\n我修正后的手写中文')
   await dialog.getByRole('button', { name: '插入当前笔记' }).click()
