@@ -755,7 +755,7 @@ function aiPrompt(task: AiTask, question: string, language: 'zh' | 'en') {
   }[task]
 }
 
-function aiMessages(input: AiInput) {
+function aiMessages(input: AiInput): ChatCompletionMessageParam[] {
   return [
     {
       role: 'system',
