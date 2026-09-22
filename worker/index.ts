@@ -248,7 +248,26 @@ async function authenticate(request: Request, env: Env, ctx: ExecutionContext) {
   return { user, tokenHash }
 }
 
+function encryptedWorkspace(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') return false
+  const workspace = value as Record<string, unknown>
+  return (
+    workspace.version === 1 &&
+    workspace.encryption === 'aes-256-gcm-v1' &&
+    typeof workspace.iv === 'string' &&
+    /^[A-Za-z0-9_-]{16}$/.test(workspace.iv) &&
+    typeof workspace.ciphertext === 'string' &&
+    /^[A-Za-z0-9_-]+$/.test(workspace.ciphertext) &&
+    Array.isArray(workspace.imageIds) &&
+    workspace.imageIds.length <= 5000 &&
+    workspace.imageIds.every(
+      (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{40,64}$/.test(id),
+    )
+  )
+}
+
 function validWorkspace(value: unknown): value is Record<string, unknown> {
+  if (encryptedWorkspace(value)) return true
   if (!value || typeof value !== 'object') return false
   const workspace = value as Record<string, unknown>
   return (
@@ -565,7 +584,8 @@ async function putWorkspace(
     })
 
   const serialized = JSON.stringify(body.workspace)
-  if (/data:image\//i.test(serialized))
+  const encrypted = encryptedWorkspace(body.workspace)
+  if (!encrypted && /data:image\//i.test(serialized))
     throw new ApiError(422, '请先将笔记中的本地图片上传到 R2。')
   const chunks = chunkUtf8(serialized)
   const revision = currentRevision + 1
@@ -582,7 +602,12 @@ async function putWorkspace(
     ).bind(user.id, revision, chunks.length, updatedAt),
   ]
   await env.DB.batch(statements)
-  ctx.waitUntil(cleanupUnusedImages(user.id, referencedImages(body.workspace), env))
+  // The encrypted envelope exposes only opaque attachment IDs so R2 cleanup can
+  // continue without revealing titles, text, tags, drawings, or learning data.
+  const referenced = encrypted
+    ? new Set((body.workspace.imageIds as string[]) || [])
+    : referencedImages(body.workspace)
+  ctx.waitUntil(cleanupUnusedImages(user.id, referenced, env))
   return json({ revision, updatedAt })
 }
 
