@@ -11,6 +11,7 @@
       "migrations_dir": "worker/migrations"
     }
   ],
+  "ai": { "binding": "AI" },
   "r2_buckets": [
     {
       "binding": "IMAGES",
@@ -18,7 +19,8 @@
     }
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,https://orion-note-learn.vercel.app"
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,https://orion-note-learn.vercel.app",
+    "AI_ALLOWED_HOSTS": ""
   },
   "observability": {
     "enabled": true
