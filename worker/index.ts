@@ -257,7 +257,12 @@ function encryptedWorkspace(value: unknown): value is Record<string, unknown> {
     typeof workspace.iv === 'string' &&
     /^[A-Za-z0-9_-]{16}$/.test(workspace.iv) &&
     typeof workspace.ciphertext === 'string' &&
-    /^[A-Za-z0-9_-]+$/.test(workspace.ciphertext)
+    /^[A-Za-z0-9_-]+$/.test(workspace.ciphertext) &&
+    Array.isArray(workspace.imageIds) &&
+    workspace.imageIds.length <= 5000 &&
+    workspace.imageIds.every(
+      (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{40,64}$/.test(id),
+    )
   )
 }
 
@@ -597,10 +602,12 @@ async function putWorkspace(
     ).bind(user.id, revision, chunks.length, updatedAt),
   ]
   await env.DB.batch(statements)
-  // Encrypted workspaces are intentionally opaque to the service. The server cannot
-  // inspect private note content to determine attachment references.
-  if (!encrypted)
-    ctx.waitUntil(cleanupUnusedImages(user.id, referencedImages(body.workspace), env))
+  // The encrypted envelope exposes only opaque attachment IDs so R2 cleanup can
+  // continue without revealing titles, text, tags, drawings, or learning data.
+  const referenced = encrypted
+    ? new Set((body.workspace.imageIds as string[]) || [])
+    : referencedImages(body.workspace)
+  ctx.waitUntil(cleanupUnusedImages(user.id, referenced, env))
   return json({ revision, updatedAt })
 }
 
