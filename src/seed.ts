@@ -9,7 +9,7 @@ export function seedWorkspace(): Workspace {
     notes: [
       {
         id: 'welcome',
-        title: '欢迎来到 Orion：把学过的，变成真正掌握的',
+        title: '把学过的，变成真正掌握的',
         folder: '学习方法',
         tags: ['开始使用', '隐私', '学习方法'],
         favorite: true,
