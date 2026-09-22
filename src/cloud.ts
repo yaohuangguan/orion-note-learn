@@ -514,6 +514,47 @@ export async function saveCloudWorkspace(
   )
 }
 
+export type StudyAiTask = 'summary' | 'questions' | 'cards' | 'chat'
+
+export type StudyAiResponse = {
+  content: string
+  provider?: string
+  model?: string
+  remaining?: number
+  limit?: number
+}
+
+export async function runStudyAI(
+  settings: { provider: string; baseUrl: string; model: string; apiKey: string },
+  input: {
+    task: StudyAiTask
+    title: string
+    content: string
+    question?: string
+    language: 'zh' | 'en'
+  },
+  session: CloudSession | null = loadCloudSession(),
+) {
+  const free = settings.provider === 'orion-free'
+  return request<StudyAiResponse>(
+    free ? '/v1/ai/free' : '/v1/ai/byok',
+    {
+      method: 'POST',
+      body: JSON.stringify(
+        free
+          ? input
+          : {
+              ...input,
+              apiKey: settings.apiKey,
+              baseUrl: settings.baseUrl,
+              model: settings.model,
+            },
+      ),
+    },
+    free ? session : null,
+  )
+}
+
 export async function publishPublicShare(session: CloudSession, note: Note) {
   return request<{ id: string; updatedAt: number }>(
     '/v1/shares',
