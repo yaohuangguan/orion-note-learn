@@ -216,6 +216,60 @@ test('account sync restores notes and R2 images on another device', async ({ pag
   )
   await secondContext.close()
 })
+test('encrypted image blobs require authentication and are not public images', async ({ page }) => {
+  const email = `encrypted-image-${Date.now()}@example.com`
+  const password = 'test-password-123'
+
+  await ready(page)
+  await page.getByRole('button', { name: '账户与云同步' }).click()
+  const account = page.getByRole('dialog', { name: '登录 Orion Note Learn' })
+  await account.getByRole('tab', { name: '注册' }).click()
+  await account.getByLabel('邮箱').fill(email)
+  await account.getByLabel('密码').fill(password)
+  await account.getByRole('button', { name: '创建账户' }).click()
+  await expect(page.getByRole('dialog', { name: '账户与云同步' })).toContainText('已连接云端')
+
+  const result = await page.evaluate(async () => {
+    const session = JSON.parse(localStorage.getItem('orion-cloud-session') || 'null')
+    const encrypted = new Uint8Array(64)
+    crypto.getRandomValues(encrypted)
+    const upload = await fetch('http://localhost:8787/v1/private-images', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.token}`,
+        'Content-Type': 'application/octet-stream',
+      },
+      body: encrypted,
+    })
+    const uploaded = await upload.json()
+    const authenticated = await fetch(uploaded.src, {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+    const restored = new Uint8Array(await authenticated.arrayBuffer())
+    const anonymous = await fetch(uploaded.src)
+    const publicAttempt = await fetch(
+      uploaded.src.replace('/v1/private-images/', '/v1/images/'),
+    )
+    return {
+      uploadStatus: upload.status,
+      authenticatedStatus: authenticated.status,
+      anonymousStatus: anonymous.status,
+      publicStatus: publicAttempt.status,
+      sameBytes:
+        restored.length === encrypted.length &&
+        restored.every((value, index) => value === encrypted[index]),
+    }
+  })
+
+  expect(result).toEqual({
+    uploadStatus: 201,
+    authenticatedStatus: 200,
+    anonymousStatus: 401,
+    publicStatus: 404,
+    sameBytes: true,
+  })
+})
+
 test('account registration submits browser-autofilled DOM values', async ({ page }) => {
   const email = `autofill-${Date.now()}@example.com`
   const password = 'autofill-password-123'
