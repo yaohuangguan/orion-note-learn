@@ -187,14 +187,29 @@ test('account sync restores notes and R2 images on another device', async ({ pag
             headers: { Authorization: `Bearer ${session.token}` },
           })
           const remote = await response.json()
-          const note = remote.workspace?.notes?.find(
-            (item: { title?: string }) => item.title === '跨设备 R2 图片',
-          )
-          return note?.html || ''
+          return {
+            encryption: remote.workspace?.encryption || '',
+            raw: JSON.stringify(remote.workspace || null),
+          }
         }),
       { timeout: 15000 },
     )
-    .toMatch(/http:\/\/localhost:8787\/v1\/images\//)
+    .toEqual(
+      expect.objectContaining({
+        encryption: 'aes-256-gcm-v1',
+        raw: expect.not.stringContaining('跨设备 R2 图片'),
+      }),
+    )
+
+  const rawRemote = await page.evaluate(async () => {
+    const session = JSON.parse(localStorage.getItem('orion-cloud-session') || 'null')
+    const response = await fetch('http://localhost:8787/v1/workspace', {
+      headers: { Authorization: `Bearer ${session.token}` },
+    })
+    return JSON.stringify((await response.json()).workspace)
+  })
+  expect(rawRemote).not.toContain('这篇笔记来自第一台设备。')
+  expect(rawRemote).not.toContain('/v1/images/')
 
   const secondContext = await browser.newContext()
   const second = await secondContext.newPage()
@@ -274,7 +289,7 @@ test('account registration submits browser-autofilled DOM values', async ({ page
   const email = `autofill-${Date.now()}@example.com`
   const password = 'autofill-password-123'
   const captured = {
-    registerBody: null as { email?: string; passwordProof?: string } | null,
+    registerBody: null as { email?: string; passwordProof?: string; vaultKey?: string } | null,
   }
 
   await ready(page)
@@ -307,6 +322,7 @@ test('account registration submits browser-autofilled DOM values', async ({ page
 
   await expect.poll(() => captured.registerBody?.email).toBe(email)
   expect(captured.registerBody?.passwordProof).toMatch(/^[A-Za-z0-9_-]{43}$/)
+  expect(captured.registerBody?.vaultKey).toBeUndefined()
 })
 
 test('public share opens without login and can be saved after signing in', async ({ page, browser }) => {

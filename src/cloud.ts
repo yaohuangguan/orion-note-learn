@@ -6,13 +6,25 @@ import { currentLanguage } from './i18n'
 const SESSION_KEY = 'orion-cloud-session'
 const configuredUrl = (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/$/, '')
 const PASSWORD_ITERATIONS = 210_000
+const VAULT_ITERATIONS = 310_000
+const encoder = new TextEncoder()
+const decoder = new TextDecoder()
 
 export type CloudUser = { id: string; email: string }
-export type CloudSession = { token: string; user: CloudUser }
+export type CloudSession = { token: string; user: CloudUser; vaultKey: string }
 export type RemoteWorkspace = {
   workspace: Workspace | null
   revision: number
   updatedAt: number | null
+  encrypted: boolean
+}
+
+type EncryptedWorkspace = {
+  version: 1
+  encryption: 'aes-256-gcm-v1'
+  iv: string
+  ciphertext: string
+  imageIds: string[]
 }
 
 export type PublicShare = {
@@ -43,6 +55,143 @@ function message(chinese: string, english: string) {
   return currentLanguage() === 'zh' ? chinese : english
 }
 
+function toBase64Url(bytes: Uint8Array) {
+  let binary = ''
+  for (let offset = 0; offset < bytes.length; offset += 8192)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192))
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function fromBase64Url(value: string) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(value.length / 4) * 4, '=')
+  const binary = atob(padded)
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+}
+
+async function passwordMaterial(email: string, password: string) {
+  const material = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(password),
+    { name: 'PBKDF2' },
+    false,
+    ['deriveBits'],
+  )
+  const proofBits = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: encoder.encode(`orion-note-learn:${email}`),
+        iterations: PASSWORD_ITERATIONS,
+      },
+      material,
+      256,
+    ),
+  )
+  // Derive the vault key independently from the raw password. The authentication
+  // proof sent to the server is therefore insufficient to derive or decrypt the vault.
+  const vaultBits = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt: encoder.encode(`orion-note-learn:vault:v1:${email}`),
+        iterations: VAULT_ITERATIONS,
+      },
+      material,
+      256,
+    ),
+  )
+  return {
+    passwordProof: toBase64Url(proofBits),
+    vaultKey: toBase64Url(vaultBits),
+  }
+}
+
+function isEncryptedWorkspace(value: unknown): value is EncryptedWorkspace {
+  if (!value || typeof value !== 'object') return false
+  const envelope = value as Record<string, unknown>
+  return (
+    envelope.version === 1 &&
+    envelope.encryption === 'aes-256-gcm-v1' &&
+    typeof envelope.iv === 'string' &&
+    /^[A-Za-z0-9_-]{16}$/.test(envelope.iv) &&
+    typeof envelope.ciphertext === 'string' &&
+    /^[A-Za-z0-9_-]+$/.test(envelope.ciphertext) &&
+    Array.isArray(envelope.imageIds) &&
+    envelope.imageIds.length <= 5000 &&
+    envelope.imageIds.every(
+      (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{40,64}$/.test(id),
+    )
+  )
+}
+
+async function vaultKey(session: CloudSession, usage: KeyUsage[]) {
+  return crypto.subtle.importKey(
+    'raw',
+    fromBase64Url(session.vaultKey),
+    { name: 'AES-GCM', length: 256 },
+    false,
+    usage,
+  )
+}
+
+async function encryptWorkspace(session: CloudSession, workspace: Workspace): Promise<EncryptedWorkspace> {
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const key = await vaultKey(session, ['encrypt'])
+  const serialized = JSON.stringify(workspace)
+  const imageIds = [
+    ...new Set(
+      [...serialized.matchAll(/\/v1\/images\/([A-Za-z0-9_-]{40,64})/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ]
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      {
+        name: 'AES-GCM',
+        iv,
+        additionalData: encoder.encode(`orion-note-learn:workspace:v1:${session.user.id}`),
+      },
+      key,
+      encoder.encode(serialized),
+    ),
+  )
+  return {
+    version: 1,
+    encryption: 'aes-256-gcm-v1',
+    iv: toBase64Url(iv),
+    ciphertext: toBase64Url(ciphertext),
+    imageIds,
+  }
+}
+
+async function decryptWorkspace(session: CloudSession, envelope: EncryptedWorkspace) {
+  try {
+    const key = await vaultKey(session, ['decrypt'])
+    const plaintext = await crypto.subtle.decrypt(
+      {
+        name: 'AES-GCM',
+        iv: fromBase64Url(envelope.iv),
+        additionalData: encoder.encode(`orion-note-learn:workspace:v1:${session.user.id}`),
+      },
+      key,
+      fromBase64Url(envelope.ciphertext),
+    )
+    return workspaceSchema.parse(JSON.parse(decoder.decode(plaintext)))
+  } catch {
+    throw new CloudApiError(
+      message(
+        '无法解锁端到端加密的笔记。请退出后使用正确密码重新登录。',
+        'Your end-to-end encrypted notes could not be unlocked. Sign out and sign in again with the correct password.',
+      ),
+      423,
+      'VAULT_LOCKED',
+    )
+  }
+}
+
 export function loadCloudSession(): CloudSession | null {
   try {
     const value = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') as CloudSession | null
@@ -50,11 +199,14 @@ export function loadCloudSession(): CloudSession | null {
       value &&
       typeof value.token === 'string' &&
       typeof value.user?.id === 'string' &&
-      typeof value.user?.email === 'string'
+      typeof value.user?.email === 'string' &&
+      typeof value.vaultKey === 'string' &&
+      /^[A-Za-z0-9_-]{43}$/.test(value.vaultKey)
     )
       return value
+    if (value) localStorage.removeItem(SESSION_KEY)
   } catch {
-    /* A malformed local session is treated as signed out. */
+    /* A malformed or pre-E2EE local session is treated as signed out. */
   }
   return null
 }
@@ -118,31 +270,12 @@ export async function authenticateCloud(
       400,
     )
   const normalizedEmail = email.trim().toLocaleLowerCase('en-US')
-  const material = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(password),
-    { name: 'PBKDF2' },
-    false,
-    ['deriveBits'],
-  )
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: 'PBKDF2',
-      hash: 'SHA-256',
-      salt: new TextEncoder().encode(`orion-note-learn:${normalizedEmail}`),
-      iterations: PASSWORD_ITERATIONS,
-    },
-    material,
-    256,
-  )
-  const passwordProof = btoa(String.fromCharCode(...new Uint8Array(bits)))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-  const session = await request<CloudSession>(`/v1/auth/${mode}`, {
+  const { passwordProof, vaultKey } = await passwordMaterial(normalizedEmail, password)
+  const remote = await request<Omit<CloudSession, 'vaultKey'>>(`/v1/auth/${mode}`, {
     method: 'POST',
     body: JSON.stringify({ email: normalizedEmail, passwordProof }),
   }, null)
+  const session: CloudSession = { ...remote, vaultKey }
   storeCloudSession(session)
   return session
 }
@@ -154,11 +287,26 @@ export async function verifyCloudSession(session: CloudSession) {
   return next
 }
 
-export async function fetchCloudWorkspace(session: CloudSession) {
-  const result = await request<RemoteWorkspace>('/v1/workspace', {}, session)
+export async function fetchCloudWorkspace(session: CloudSession): Promise<RemoteWorkspace> {
+  const result = await request<{
+    workspace: unknown
+    revision: number
+    updatedAt: number | null
+  }>('/v1/workspace', {}, session)
+  if (!result.workspace)
+    return { ...result, workspace: null, encrypted: false }
+
+  if (isEncryptedWorkspace(result.workspace))
+    return {
+      ...result,
+      workspace: await decryptWorkspace(session, result.workspace),
+      encrypted: true,
+    }
+
   return {
     ...result,
-    workspace: result.workspace ? workspaceSchema.parse(result.workspace) : null,
+    workspace: workspaceSchema.parse(result.workspace),
+    encrypted: false,
   }
 }
 
@@ -167,11 +315,12 @@ export async function saveCloudWorkspace(
   workspace: Workspace,
   baseRevision: number | null,
 ) {
+  const encrypted = await encryptWorkspace(session, workspace)
   return request<{ revision: number; updatedAt: number }>(
     '/v1/workspace',
     {
       method: 'PUT',
-      body: JSON.stringify({ workspace, baseRevision }),
+      body: JSON.stringify({ workspace: encrypted, baseRevision }),
     },
     session,
   )

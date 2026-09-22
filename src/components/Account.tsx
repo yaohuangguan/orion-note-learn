@@ -90,8 +90,8 @@ export default function Account({
         <div className="privacy-note">
           <ShieldCheck size={20} />
           <p>{pick(
-            '笔记仍会先保存在本机；联网时同步文字、图片、手写内容、闪卡和复习进度。AI Key 不会上传。',
-            'Notes are saved locally first. Text, images, drawings, flashcards, and review progress sync when online. Your AI key is never uploaded.',
+            '标题、正文、标签、手写内容、闪卡和复习进度会在浏览器端加密后再上传，Orion 服务端只保存密文。图片附件目前使用 HTTPS 加密传输和云端静态加密，尚未端到端加密。AI Key 不会上传。',
+            'Titles, note text, tags, drawings, flashcards, and review progress are encrypted in your browser before upload, so Orion stores only ciphertext. Image attachments currently use encrypted transport and encrypted cloud storage, but are not yet end-to-end encrypted. Your AI key is never uploaded.',
           )}</p>
         </div>
         <div className="modal-actions account-actions">
@@ -186,8 +186,8 @@ export default function Account({
             <div className="privacy-note">
               <ShieldCheck size={20} />
               <p>{pick(
-                '密码会在设备端经过高强度推导，D1 只保存加盐后的证明哈希；会话有效期 30 天。云同步不包含你的 AI Key。',
-                'Your password is strengthened on-device, and D1 stores only a salted proof hash. Sessions last 30 days. Cloud sync never includes your AI key.',
+                '密码在设备端推导登录证明和私人笔记加密密钥；密码本身不会上传。私人笔记内容在离开浏览器前使用 AES-256-GCM 加密，服务端无法读取正文。主动创建的公开分享文章除外。',
+                'Your password derives both the sign-in proof and private-note encryption key on-device; the password itself is never uploaded. Private note content is encrypted with AES-256-GCM before leaving your browser, so the service cannot read it. Articles you explicitly publish are the exception.',
               )}</p>
             </div>
             <div className="modal-actions">
