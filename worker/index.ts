@@ -1,3 +1,5 @@
+import { extractAiText } from '../src/ai-response'
+
 interface Env {
   DB: D1Database
   IMAGES: R2Bucket
@@ -806,7 +808,7 @@ async function aiRateLimit(request: Request, env: Env, user: SessionUser | null)
     await env.DB.prepare('UPDATE ai_limits SET request_count = request_count + 1 WHERE key = ?')
       .bind(key)
       .run()
-    return { remaining: Math.max(0, limit - row.request_count - 1), limit }
+    return { remaining: Math.max(0, limit - row.request_count - 1), limit, key }
   }
 
   await env.DB.prepare(
@@ -814,18 +816,16 @@ async function aiRateLimit(request: Request, env: Env, user: SessionUser | null)
   )
     .bind(key, now)
     .run()
-  return { remaining: Math.max(0, limit - 1), limit }
+  return { remaining: Math.max(0, limit - 1), limit, key }
 }
 
-function extractAiText(result: unknown) {
-  if (!result || typeof result !== 'object') return ''
-  const value = result as {
-    response?: unknown
-    choices?: { message?: { content?: unknown } }[]
-  }
-  if (typeof value.response === 'string') return value.response
-  const content = value.choices?.[0]?.message?.content
-  return typeof content === 'string' ? content : ''
+
+async function refundAiRateLimit(env: Env, key: string) {
+  await env.DB.prepare(
+    'UPDATE ai_limits SET request_count = CASE WHEN request_count > 0 THEN request_count - 1 ELSE 0 END WHERE key = ?',
+  )
+    .bind(key)
+    .run()
 }
 
 async function freeAi(request: Request, env: Env) {
@@ -836,13 +836,19 @@ async function freeAi(request: Request, env: Env) {
   try {
     result = await env.AI.run(FREE_AI_MODEL, {
       messages: aiMessages(input),
-      max_completion_tokens: input.task === 'cards' ? 1600 : 1200,
+      max_completion_tokens: input.task === 'cards' ? 2000 : 1800,
+      reasoning_effort: null,
+      chat_template_kwargs: { enable_thinking: false },
     })
   } catch {
+    await refundAiRateLimit(env, quota.key)
     throw new ApiError(502, '免费 AI 暂时不可用，请稍后重试。')
   }
   const content = extractAiText(result)
-  if (!content.trim()) throw new ApiError(502, 'AI 没有返回有效文本，请稍后重试。')
+  if (!content.trim()) {
+    await refundAiRateLimit(env, quota.key)
+    throw new ApiError(502, 'AI 没有返回有效文本，请稍后重试。')
+  }
   return json({
     content,
     provider: 'orion-free',
