@@ -569,7 +569,7 @@ async function getEncryptedImage(id: string, user: SessionUser, env: Env) {
   return new Response(object.body, {
     headers: {
       'Content-Type': 'application/octet-stream',
-      'Cache-Control': 'private, max-age=31536000, immutable',
+      'Cache-Control': 'private, no-store',
       ETag: object.httpEtag,
       'X-Content-Type-Options': 'nosniff',
     },
