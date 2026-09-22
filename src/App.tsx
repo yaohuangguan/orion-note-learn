@@ -79,7 +79,7 @@ import { usePwaInstall } from './pwa'
 const Drawing = lazy(() => import('./components/Drawing'))
 const AIPanel = lazy(() => import('./components/AIPanel'))
 type View = 'editor' | 'library' | 'review' | 'trash'
-type Dialog = 'settings' | 'account' | 'folder' | 'card' | 'import' | 'properties' | 'share' | null
+type Dialog = 'settings' | 'account' | 'folder' | 'card' | 'import' | 'properties' | 'share' | 'pwa' | null
 type CloudState = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'unavailable'
 function initialSettings(): AISettings {
   const p = providers[0]
@@ -748,6 +748,10 @@ export default function App() {
             <button
               className="sidebar-utility"
               onClick={() => {
+                if (pwa.needsManualInstall) {
+                  setDialog('pwa')
+                  return
+                }
                 void pwa.install().then((installed) => {
                   if (installed) notify(pick('Orion 已安装到设备', 'Orion was installed on this device.'))
                 })
@@ -1167,6 +1171,54 @@ export default function App() {
           )}
         </main>
       </div>
+      {dialog === 'pwa' ? (
+        <Modal title={pick('安装 Orion 到 iPhone / iPad', 'Install Orion on iPhone / iPad')} onClose={() => setDialog(null)}>
+          <div className="install-guide">
+            <div className="install-guide-intro">
+              <span className="feature-icon">
+                <Download size={22} />
+              </span>
+              <div>
+                <h3>{pick('像 App 一样从主屏幕打开', 'Open Orion from your Home Screen like an app')}</h3>
+                <p>
+                  {pick(
+                    'iOS 不支持网页直接弹出 PWA 安装窗口，所以 Orion 会引导你使用浏览器的“添加到主屏幕”。安装后会以独立窗口打开。',
+                    'iOS does not support the web install prompt used by desktop Chrome, so Orion uses the browser’s Add to Home Screen flow. Once installed, it opens in a standalone app window.',
+                  )}
+                </p>
+              </div>
+            </div>
+            <ol className="install-steps">
+              <li>
+                <strong>{pick('打开浏览器的分享菜单', 'Open the browser Share menu')}</strong>
+                <span>{pick('点 Safari / Chrome 工具栏里的分享按钮。', 'Tap the Share button in Safari or Chrome.')}</span>
+              </li>
+              <li>
+                <strong>{pick('选择“添加到主屏幕”', 'Choose “Add to Home Screen”')}</strong>
+                <span>
+                  {pick(
+                    '如果列表里没有这个选项，向下滚动到“编辑操作”；仍然没有时，用 Safari 打开 Orion 再试。',
+                    'If it is missing, scroll to Edit Actions. If it still does not appear, open Orion in Safari and try again.',
+                  )}
+                </span>
+              </li>
+              <li>
+                <strong>{pick('打开“作为网页 App 打开”并添加', 'Enable “Open as Web App” and add it')}</strong>
+                <span>{pick('完成后 Orion 会出现在主屏幕和 App 资源库中。', 'Orion will then appear on your Home Screen and in the App Library.')}</span>
+              </li>
+            </ol>
+            <div className="privacy-note">
+              <BookOpen size={20} />
+              <p>
+                {pick(
+                  '安装 PWA 不会把私人笔记上传到新的地方。本地笔记仍保存在设备中，云同步仍使用现有的端到端加密。',
+                  'Installing the PWA does not upload private notes anywhere new. Local notes stay on your device, and cloud sync keeps using the existing end-to-end encryption.',
+                )}
+              </p>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
       {dialog === 'settings' ? (
         <Settings
           settings={settings}

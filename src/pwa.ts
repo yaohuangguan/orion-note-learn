@@ -14,9 +14,18 @@ function standalone() {
   )
 }
 
+function iosDevice() {
+  const ua = navigator.userAgent
+  return (
+    /iPhone|iPad|iPod/i.test(ua) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  )
+}
+
 export function usePwaInstall() {
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [installed, setInstalled] = useState(standalone)
+  const [isIos] = useState(iosDevice)
 
   useEffect(() => {
     const beforeInstall = (event: Event) => {
@@ -39,16 +48,21 @@ export function usePwaInstall() {
     if (!promptEvent) return false
     await promptEvent.prompt()
     const choice = await promptEvent.userChoice
+    setPromptEvent(null)
     if (choice.outcome === 'accepted') {
       setInstalled(true)
-      setPromptEvent(null)
       return true
     }
     return false
   }
 
+  const canPromptInstall = !installed && Boolean(promptEvent)
+  const needsManualInstall = !installed && isIos
+
   return {
-    canInstall: !installed && Boolean(promptEvent),
+    canInstall: canPromptInstall || needsManualInstall,
+    canPromptInstall,
+    needsManualInstall,
     installed,
     install,
   }
