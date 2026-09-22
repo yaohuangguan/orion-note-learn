@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Camera, ImageUp, LockKeyhole, ScanText, ShieldCheck } from 'lucide-react'
 import { Modal } from './Modal'
+import PrivacyPromise from './PrivacyPromise'
 import { recognizeImageLocally, type OcrLine } from '../ocr'
 import { useI18n } from '../i18n'
 
@@ -95,18 +96,7 @@ export default function OcrImport({
       onClose={onClose}
       wide
     >
-      <div className="ocr-privacy-banner">
-        <ShieldCheck size={22} />
-        <div>
-          <strong>{pick('图片不会上传，也不会存储', 'Your image is not uploaded or stored')}</strong>
-          <p>
-            {pick(
-              'OCR 完全在当前设备的浏览器中运行。首次使用只会下载识别模型；你选择的照片不会发送到 Orion 服务器。',
-              'OCR runs entirely in this browser. The first use downloads the recognition model only; your photo is never sent to Orion servers.',
-            )}
-          </p>
-        </div>
-      </div>
+      <PrivacyPromise className="ocr-privacy-promise" />
 
       <div className="ocr-source-actions">
         <button
@@ -233,8 +223,8 @@ export default function OcrImport({
         <LockKeyhole size={20} />
         <p>
           {pick(
-            '识别完成后原图仍只存在于当前页面内存中；关闭弹窗后临时预览会释放。',
-            'After recognition, the original image remains only in this page memory; closing this dialog releases the temporary preview.',
+            'OCR 原图只存在于当前页面的临时内存中，关闭弹窗后预览会释放；插入笔记的只有你确认过的文字。',
+            'The OCR source image exists only in temporary page memory and is released when you close this dialog. Only the text you approve is inserted into your note.',
           )}
         </p>
       </div>
