@@ -67,7 +67,7 @@ export const providers = [
     baseUrl: 'https://api.deepseek.com/v1',
     model: 'deepseek-chat',
   },
-  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { id: 'openai', name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: 'gpt-5.6-luna' },
   {
     id: 'openrouter',
     name: 'OpenRouter',
