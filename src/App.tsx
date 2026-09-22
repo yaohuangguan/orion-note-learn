@@ -65,8 +65,8 @@ import {
   loadCloudSession,
   mergeWorkspaces,
   migrateWorkspaceImages,
+  prepareNoteForPublicShare,
   saveCloudWorkspace,
-  uploadCloudImage,
   verifyCloudSession,
   publishPublicShare,
   revokePublicShare,
@@ -488,21 +488,7 @@ export default function App() {
     setSharing(true)
     setShareError('')
     try {
-      let publicNote = note
-      if (/data:image\//i.test(note.html)) {
-        const prepared = await migrateWorkspaceImages(
-          {
-            version: 1,
-            notes: [note],
-            cards: [],
-            folders: [note.folder],
-            reviewLog: [],
-          },
-          cloudSession,
-        )
-        publicNote = prepared.workspace.notes[0]
-        if (prepared.changed) updateNote(note.id, { html: publicNote.html })
-      }
+      const publicNote = await prepareNoteForPublicShare(note, cloudSession)
       const result = await publishPublicShare(cloudSession, publicNote)
       const url = `${window.location.origin}/share/${result.id}`
       setShareId(result.id)
@@ -955,11 +941,6 @@ export default function App() {
                         key={note.id}
                         html={note.html}
                         onChange={(html) => updateNote(note.id, { html })}
-                        onImageUpload={
-                          cloudSession
-                            ? async (image) => (await uploadCloudImage(cloudSession, image)).src
-                            : undefined
-                        }
                       />
                     ) : (
                       <Drawing
