@@ -3030,3 +3030,50 @@ svg {
     height: min(48vh, 360px);
   }
 }
+
+
+/* Mobile PWA install guidance */
+.install-guide {
+  display: grid;
+  gap: 18px;
+}
+.install-guide-intro {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.install-guide-intro h3 {
+  margin: 0 0 5px;
+  color: #344b3c;
+  font-size: 15px;
+}
+.install-guide-intro p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.install-steps {
+  margin: 0;
+  padding-left: 22px;
+  display: grid;
+  gap: 13px;
+}
+.install-steps li {
+  padding-left: 4px;
+  color: #46604f;
+}
+.install-steps strong,
+.install-steps span {
+  display: block;
+}
+.install-steps strong {
+  margin-bottom: 3px;
+  font-size: 13px;
+}
+.install-steps span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
