@@ -16,6 +16,7 @@ import type { AISettings, Card, Note } from '../domain'
 import { parseCards, uid } from '../domain'
 import { htmlText } from '../storage'
 import { useI18n } from '../i18n'
+import { runStudyAI, type CloudSession } from '../cloud'
 
 type Result = {
   task: string
@@ -26,6 +27,7 @@ type Result = {
 export default function AIPanel({
   note,
   settings,
+  cloudSession,
   onSettings,
   onClose,
   onAddCards,
@@ -33,6 +35,7 @@ export default function AIPanel({
 }: {
   note: Note
   settings: AISettings
+  cloudSession: CloudSession | null
   onSettings: () => void
   onClose: () => void
   onAddCards: (cards: Card[]) => void
@@ -43,10 +46,12 @@ export default function AIPanel({
   const [result, setResult] = useState<Result | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const free = settings.provider === 'orion-free'
   const controller = useRef<AbortController | null>(null)
   useEffect(() => () => controller.current?.abort(), [])
   async function run(task: 'summary' | 'questions' | 'cards' | 'chat') {
-    if (!settings.apiKey) {
+    if (!free && !settings.apiKey) {
       onSettings()
       return
     }
@@ -68,15 +73,15 @@ export default function AIPanel({
     const abort = new AbortController()
     controller.current = abort
     try {
-      const response = await fetch('/api/ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: abort.signal,
-        body: JSON.stringify({ ...settings, task, title: note.title, content, question, language }),
-      })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || pick('AI 请求失败，请重试。', 'AI request failed. Please try again.'))
-      if (typeof data.content !== 'string') throw new Error(pick('AI 返回格式异常，请重试。', 'AI returned an invalid response. Please try again.'))
+      const data = await runStudyAI(
+        settings,
+        { task, title: note.title, content, question, language },
+        cloudSession,
+        abort.signal,
+      )
+      if (typeof data.content !== 'string')
+        throw new Error(pick('AI 返回格式异常，请重试。', 'AI returned an invalid response. Please try again.'))
+      if (typeof data.remaining === 'number') setRemaining(data.remaining)
       let cards: Result['cards']
       if (task === 'cards') {
         try {
@@ -170,14 +175,32 @@ export default function AIPanel({
             <span className="action-arrow">↗</span>
           </button>
         </div>
-        {!settings.apiKey ? (
+        {free ? (
+          <div className="free-ai-status">
+            <Sparkles size={15} />
+            <span>
+              {pick('Orion 免费试用', 'Orion Free Trial')}
+              {remaining !== null
+                ? pick(` · 今日剩余 ${remaining} 次`, ` · ${remaining} left today`)
+                : pick(
+                    cloudSession ? ' · 登录用户每天 10 次' : ' · 无需登录，每天 3 次',
+                    cloudSession ? ' · 10 requests/day when signed in' : ' · No sign-in, 3 requests/day',
+                  )}
+            </span>
+            <button className="text-button" type="button" onClick={onSettings}>
+              {pick('切换模型', 'Change model')}
+            </button>
+          </div>
+        ) : !settings.apiKey ? (
           <button className="key-prompt" onClick={onSettings}>
             <KeyRound size={16} />
-            <span>{pick('连接你的 AI，开始学习', 'Connect your AI to start learning')}</span>
+            <span>{pick('输入自己的 API Key', 'Enter your own API key')}</span>
             <span>→</span>
           </button>
         ) : (
-          <p className="provider-status">{settings.model} · {pick('仅使用当前笔记文字', 'Uses only this note')}</p>
+          <p className="provider-status">
+            {settings.model} · {pick('Key 仅当前会话使用', 'Session-only key')}
+          </p>
         )}
         {loading ? (
           <div className="ai-loading" role="status">
