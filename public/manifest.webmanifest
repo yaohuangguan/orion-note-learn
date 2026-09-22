@@ -1,0 +1,27 @@
+{
+  "name": "Orion Note Learn",
+  "short_name": "Orion",
+  "description": "A local-first, privacy-first workspace for notes, OCR, flashcards, handwriting, and learning.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fbfcf9",
+  "theme_color": "#315c4d",
+  "lang": "en",
+  "categories": ["education", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
