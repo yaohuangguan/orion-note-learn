@@ -146,7 +146,7 @@ test('local OCR imports recognized text without uploading the source image', asy
   expect(uploadedRequests.some((url) => url.includes('/v1/images'))).toBe(false)
 })
 
-test('account sync restores notes and R2 images on another device', async ({ page, browser }) => {
+test('account sync restores end-to-end encrypted private images on another device', async ({ page, browser }) => {
   const email = `cloud-${Date.now()}@example.com`
   const password = 'test-password-123'
   await ready(page)
@@ -174,10 +174,33 @@ test('account sync restores notes and R2 images on another device', async ({ pag
       new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
     )
   })
-  await expect(page.getByRole('img', { name: 'cloud.png' })).toHaveAttribute(
-    'src',
-    /^http:\/\/localhost:8787\/v1\/images\//,
+  const firstImage = page.getByRole('img', { name: 'cloud.png' })
+  await expect(firstImage).toHaveAttribute('src', /^data:image\/png;base64,/)
+  await expect(firstImage).toHaveAttribute(
+    'data-orion-private-image',
+    /^[A-Za-z0-9_-]{40,64}$/,
+    { timeout: 15000 },
   )
+  const privateImageId = (await firstImage.getAttribute('data-orion-private-image'))!
+
+  const encryptedImage = await page.evaluate(async (id) => {
+    const session = JSON.parse(localStorage.getItem('orion-cloud-session') || 'null')
+    const response = await fetch(`http://localhost:8787/v1/private-images/${id}`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      cache: 'no-store',
+    })
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    return {
+      status: response.status,
+      version: bytes[0],
+      startsWithPng:
+        bytes[0] === 0x89 &&
+        bytes[1] === 0x50 &&
+        bytes[2] === 0x4e &&
+        bytes[3] === 0x47,
+    }
+  }, privateImageId)
+  expect(encryptedImage).toEqual({ status: 200, version: 1, startsWithPng: false })
   await expect
     .poll(
       () =>
@@ -210,6 +233,7 @@ test('account sync restores notes and R2 images on another device', async ({ pag
   })
   expect(rawRemote).not.toContain('这篇笔记来自第一台设备。')
   expect(rawRemote).not.toContain('/v1/images/')
+  expect(rawRemote).not.toContain('iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB')
 
   const secondContext = await browser.newContext()
   const second = await secondContext.newPage()
@@ -225,10 +249,9 @@ test('account sync restores notes and R2 images on another device', async ({ pag
   await expect(second.getByRole('textbox', { name: '笔记正文' })).toContainText(
     '这篇笔记来自第一台设备。',
   )
-  await expect(second.getByRole('img', { name: 'cloud.png' })).toHaveAttribute(
-    'src',
-    /^http:\/\/localhost:8787\/v1\/images\//,
-  )
+  const secondImage = second.getByRole('img', { name: 'cloud.png' })
+  await expect(secondImage).toHaveAttribute('src', /^data:image\/png;base64,/)
+  await expect(secondImage).toHaveAttribute('data-orion-private-image', privateImageId)
   await secondContext.close()
 })
 test('encrypted image blobs require authentication and are not public images', async ({ page }) => {
