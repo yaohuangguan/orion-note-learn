@@ -589,7 +589,24 @@ function referencedImages(workspace: Record<string, unknown>) {
   return ids
 }
 
+async function addPublicShareImageReferences(
+  userId: string,
+  referenced: Set<string>,
+  env: Env,
+) {
+  const result = await env.DB.prepare(
+    'SELECT c.content FROM public_share_chunks c JOIN public_shares s ON s.id = c.share_id WHERE s.user_id = ?',
+  )
+    .bind(userId)
+    .all<{ content: string }>()
+  for (const row of result.results) {
+    for (const match of row.content.matchAll(/\/v1\/images\/([A-Za-z0-9_-]{40,64})/g))
+      referenced.add(match[1])
+  }
+}
+
 async function cleanupUnusedImages(userId: string, referenced: Set<string>, env: Env) {
+  await addPublicShareImageReferences(userId, referenced, env)
   const cutoff = Date.now() - 24 * 60 * 60 * 1000
   const result = await env.DB.prepare(
     'SELECT public_id, object_key FROM images WHERE user_id = ? AND created_at < ? LIMIT 500',
