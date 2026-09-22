@@ -249,6 +249,7 @@ async function request<T>(
   path: string,
   init: RequestInit = {},
   session: CloudSession | null = loadCloudSession(),
+  signal?: AbortSignal,
 ) {
   const baseUrl = cloudApiUrl()
   if (!baseUrl)
@@ -540,6 +541,7 @@ export async function runStudyAI(
     free ? '/v1/ai/free' : '/v1/ai/byok',
     {
       method: 'POST',
+      signal,
       body: JSON.stringify(
         free
           ? input
