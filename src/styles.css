@@ -1762,6 +1762,81 @@ svg {
   color: #8fa27a;
   margin: 0;
 }
+.privacy-promise {
+  margin: 10px 0 18px;
+  padding: 15px;
+  border: 1px solid #dfe8d8;
+  border-radius: 10px;
+  background: #f6f9f3;
+}
+.privacy-promise-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5ece0;
+}
+.privacy-promise-mark {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #e8f0e2;
+  color: var(--green);
+}
+.privacy-promise-heading strong,
+.privacy-promise-heading span {
+  display: block;
+}
+.privacy-promise-heading strong {
+  color: #3b5544;
+  font-size: 13px;
+  font-weight: 600;
+}
+.privacy-promise-heading span {
+  margin-top: 3px;
+  color: #7f8e7a;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.privacy-promise-grid {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+}
+.privacy-promise-item {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  gap: 8px;
+  align-items: flex-start;
+}
+.privacy-promise-item > svg {
+  margin-top: 2px;
+  color: #879d70;
+}
+.privacy-promise-item strong {
+  display: block;
+  margin-bottom: 2px;
+  color: #53684f;
+  font-size: 12px;
+  font-weight: 600;
+}
+.privacy-promise-item p {
+  margin: 0;
+  color: #889683;
+  font-size: 11px;
+  line-height: 1.65;
+}
+.settings-privacy-promise,
+.account-privacy-promise {
+  margin-top: 0;
+}
+.ocr-privacy-promise {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
 .text-link {
   display: flex;
   align-items: center;
