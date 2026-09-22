@@ -2,6 +2,12 @@ import type { Card, Note, Workspace } from './domain'
 import { workspaceSchema } from './domain'
 import { seedWorkspace } from './seed'
 import { currentLanguage } from './i18n'
+import {
+  PRIVATE_IMAGE_ATTR,
+  PRIVATE_IMAGE_PLACEHOLDER,
+  isPrivateImageId,
+  privateImageIdsFromHtml,
+} from './private-images'
 
 const SESSION_KEY = 'orion-cloud-session'
 const configuredUrl = (import.meta.env.VITE_SYNC_API_URL || '').replace(/\/$/, '')
@@ -9,6 +15,16 @@ const PASSWORD_ITERATIONS = 210_000
 const VAULT_ITERATIONS = 310_000
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
+const PRIVATE_IMAGE_MIME_TO_CODE = new Map<string, number>([
+  ['image/png', 1],
+  ['image/jpeg', 2],
+  ['image/gif', 3],
+  ['image/webp', 4],
+  ['image/avif', 5],
+])
+const PRIVATE_IMAGE_CODE_TO_MIME = new Map<number, string>(
+  [...PRIVATE_IMAGE_MIME_TO_CODE].map(([mime, code]) => [code, mime]),
+)
 
 export type CloudUser = { id: string; email: string }
 export type CloudSession = { token: string; user: CloudUser; vaultKey: string }
@@ -137,16 +153,26 @@ async function vaultKey(session: CloudSession, usage: KeyUsage[]) {
 }
 
 async function encryptWorkspace(session: CloudSession, workspace: Workspace): Promise<EncryptedWorkspace> {
+  const remoteWorkspace = structuredClone(workspace)
+  const imageIds = new Set<string>()
+
+  for (const note of remoteWorkspace.notes) {
+    for (const id of privateImageIdsFromHtml(note.html)) imageIds.add(id)
+    const doc = new DOMParser().parseFromString(note.html, 'text/html')
+    for (const image of doc.querySelectorAll<HTMLImageElement>(`img[${PRIVATE_IMAGE_ATTR}]`)) {
+      const id = image.getAttribute(PRIVATE_IMAGE_ATTR) || ''
+      if (!isPrivateImageId(id)) continue
+      image.src = PRIVATE_IMAGE_PLACEHOLDER
+    }
+    note.html = doc.body.innerHTML
+  }
+
+  const serialized = JSON.stringify(remoteWorkspace)
+  for (const match of serialized.matchAll(/\/v1\/images\/([A-Za-z0-9_-]{40,64})/g))
+    imageIds.add(match[1])
+
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const key = await vaultKey(session, ['encrypt'])
-  const serialized = JSON.stringify(workspace)
-  const imageIds = [
-    ...new Set(
-      [...serialized.matchAll(/\/v1\/images\/([A-Za-z0-9_-]{40,64})/g)].map(
-        (match) => match[1],
-      ),
-    ),
-  ]
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt(
       {
@@ -163,7 +189,7 @@ async function encryptWorkspace(session: CloudSession, workspace: Workspace): Pr
     encryption: 'aes-256-gcm-v1',
     iv: toBase64Url(iv),
     ciphertext: toBase64Url(ciphertext),
-    imageIds,
+    imageIds: [...imageIds],
   }
 }
 
@@ -259,6 +285,166 @@ async function request<T>(
   return body
 }
 
+async function requestBytes(path: string, session: CloudSession) {
+  const baseUrl = cloudApiUrl()
+  if (!baseUrl)
+    throw new CloudApiError(message('尚未配置云同步服务地址。', 'Cloud sync is not configured.'))
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      headers: {
+        Authorization: `Bearer ${session.token}`,
+        'Accept-Language': currentLanguage() === 'zh' ? 'zh-CN' : 'en',
+      },
+      cache: 'no-store',
+    })
+  } catch {
+    throw new CloudApiError(
+      message(
+        '暂时无法连接云同步服务，请检查网络后重试。',
+        'Cloud sync could not be reached. Check your connection and try again.',
+      ),
+    )
+  }
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string; code?: string }
+    throw new CloudApiError(
+      body.error || message('云同步请求失败。', 'Cloud sync request failed.'),
+      response.status,
+      body.code,
+    )
+  }
+  return response.arrayBuffer()
+}
+
+function privateImageAad(session: CloudSession) {
+  return encoder.encode(`orion-note-learn:image:v1:${session.user.id}`)
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+function isLegacyCloudImage(src: string) {
+  const baseUrl = cloudApiUrl()
+  if (!baseUrl) return false
+  try {
+    const source = new URL(src)
+    const service = new URL(baseUrl)
+    return (
+      source.origin === service.origin &&
+      /^\/v1\/images\/[A-Za-z0-9_-]{40,64}$/.test(source.pathname)
+    )
+  } catch {
+    return false
+  }
+}
+
+export async function uploadPrivateCloudImage(session: CloudSession, image: Blob) {
+  const mimeCode = PRIVATE_IMAGE_MIME_TO_CODE.get(image.type)
+  if (!mimeCode)
+    throw new CloudApiError(
+      message(
+        '请使用 PNG、JPEG、GIF、WebP 或 AVIF 图片。',
+        'Use a PNG, JPEG, GIF, WebP, or AVIF image.',
+      ),
+      415,
+    )
+  const raw = new Uint8Array(await image.arrayBuffer())
+  const plaintext = new Uint8Array(raw.length + 1)
+  plaintext[0] = mimeCode
+  plaintext.set(raw, 1)
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const key = await vaultKey(session, ['encrypt'])
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv, additionalData: privateImageAad(session) },
+      key,
+      plaintext,
+    ),
+  )
+  const envelope = new Uint8Array(1 + iv.length + ciphertext.length)
+  envelope[0] = 1
+  envelope.set(iv, 1)
+  envelope.set(ciphertext, 13)
+  return request<{ src: string; id: string }>(
+    '/v1/private-images',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: envelope,
+    },
+    session,
+  )
+}
+
+export async function downloadPrivateCloudImage(session: CloudSession, id: string) {
+  if (!isPrivateImageId(id))
+    throw new CloudApiError(message('加密图片引用无效。', 'The encrypted image reference is invalid.'), 400)
+  const envelope = new Uint8Array(
+    await requestBytes(`/v1/private-images/${encodeURIComponent(id)}`, session),
+  )
+  if (envelope.length < 30 || envelope[0] !== 1)
+    throw new CloudApiError(message('加密图片数据无效。', 'The encrypted image data is invalid.'), 422)
+  try {
+    const iv = envelope.slice(1, 13)
+    const ciphertext = envelope.slice(13)
+    const key = await vaultKey(session, ['decrypt'])
+    const plaintext = new Uint8Array(
+      await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv, additionalData: privateImageAad(session) },
+        key,
+        ciphertext,
+      ),
+    )
+    const mime = PRIVATE_IMAGE_CODE_TO_MIME.get(plaintext[0])
+    if (!mime) throw new Error('Unknown image type')
+    return new Blob([plaintext.slice(1)], { type: mime })
+  } catch {
+    throw new CloudApiError(
+      message(
+        '无法解密私人图片。请退出后使用正确密码重新登录。',
+        'This private image could not be decrypted. Sign out and sign in again with the correct password.',
+      ),
+      423,
+      'IMAGE_VAULT_LOCKED',
+    )
+  }
+}
+
+async function materializePrivateWorkspaceImages(session: CloudSession, workspace: Workspace) {
+  const next = structuredClone(workspace)
+  const cached = new Map<string, string>()
+  for (const note of next.notes) {
+    if (!note.html.includes(PRIVATE_IMAGE_ATTR)) continue
+    const doc = new DOMParser().parseFromString(note.html, 'text/html')
+    const images = [...doc.querySelectorAll<HTMLImageElement>(`img[${PRIVATE_IMAGE_ATTR}]`)]
+    let changed = false
+    for (const image of images) {
+      const id = image.getAttribute(PRIVATE_IMAGE_ATTR) || ''
+      if (!isPrivateImageId(id)) continue
+      try {
+        let dataUrl = cached.get(id)
+        if (!dataUrl) {
+          dataUrl = await blobToDataUrl(await downloadPrivateCloudImage(session, id))
+          cached.set(id, dataUrl)
+        }
+        image.src = dataUrl
+        changed = true
+      } catch {
+        // Keep the harmless placeholder so a single missing attachment does not block the workspace.
+      }
+    }
+    if (changed) note.html = doc.body.innerHTML
+  }
+  return next
+}
+
 export async function authenticateCloud(
   mode: 'login' | 'register',
   email: string,
@@ -296,12 +482,14 @@ export async function fetchCloudWorkspace(session: CloudSession): Promise<Remote
   if (!result.workspace)
     return { ...result, workspace: null, encrypted: false }
 
-  if (isEncryptedWorkspace(result.workspace))
+  if (isEncryptedWorkspace(result.workspace)) {
+    const decrypted = await decryptWorkspace(session, result.workspace)
     return {
       ...result,
-      workspace: await decryptWorkspace(session, result.workspace),
+      workspace: await materializePrivateWorkspaceImages(session, decrypted),
       encrypted: true,
     }
+  }
 
   return {
     ...result,
@@ -371,26 +559,67 @@ export async function migrateWorkspaceImages(workspace: Workspace, session: Clou
   const uploaded = new Map<string, string>()
   let changed = false
   for (const note of next.notes) {
-    if (!note.html.includes('data:image/')) continue
     const doc = new DOMParser().parseFromString(note.html, 'text/html')
-    const images = [...doc.querySelectorAll<HTMLImageElement>('img[src^="data:image/"]')]
+    const images = [...doc.querySelectorAll<HTMLImageElement>('img[src]')]
+    let noteChanged = false
     for (const image of images) {
+      const existingId = image.getAttribute(PRIVATE_IMAGE_ATTR) || ''
+      if (isPrivateImageId(existingId)) continue
       const source = image.src
-      let remote = uploaded.get(source)
-      if (!remote) {
+      if (!source.startsWith('data:image/') && !isLegacyCloudImage(source)) continue
+
+      let id = uploaded.get(source)
+      let localSource = source
+      if (!id) {
         const blob = await fetch(source).then((response) => response.blob())
-        remote = (await uploadCloudImage(session, blob)).src
-        uploaded.set(source, remote)
+        const uploadedImage = await uploadPrivateCloudImage(session, blob)
+        id = uploadedImage.id
+        uploaded.set(source, id)
+        if (isLegacyCloudImage(source)) localSource = await blobToDataUrl(blob)
       }
-      image.src = remote
+      image.setAttribute(PRIVATE_IMAGE_ATTR, id)
+      image.src = localSource
+      noteChanged = true
       changed = true
     }
-    if (images.length) {
+    if (noteChanged) {
       note.html = doc.body.innerHTML
       note.updatedAt = Date.now()
     }
   }
   return { workspace: next, changed }
+}
+
+export async function prepareNoteForPublicShare(note: Note, session: CloudSession) {
+  const next = structuredClone(note)
+  const doc = new DOMParser().parseFromString(next.html, 'text/html')
+  const images = [...doc.querySelectorAll<HTMLImageElement>('img[src]')]
+  const uploaded = new Map<string, string>()
+
+  for (const image of images) {
+    const privateId = image.getAttribute(PRIVATE_IMAGE_ATTR) || ''
+    const source = image.src
+    if (!privateId && !source.startsWith('data:image/')) continue
+
+    const cacheKey = privateId || source
+    let publicSrc = uploaded.get(cacheKey)
+    if (!publicSrc) {
+      let blob: Blob
+      if (source.startsWith('data:image/') && source !== PRIVATE_IMAGE_PLACEHOLDER)
+        blob = await fetch(source).then((response) => response.blob())
+      else if (isPrivateImageId(privateId))
+        blob = await downloadPrivateCloudImage(session, privateId)
+      else
+        continue
+      publicSrc = (await uploadCloudImage(session, blob)).src
+      uploaded.set(cacheKey, publicSrc)
+    }
+    image.src = publicSrc
+    image.removeAttribute(PRIVATE_IMAGE_ATTR)
+  }
+
+  next.html = doc.body.innerHTML
+  return next
 }
 
 export async function endCloudSession(session: CloudSession) {
