@@ -365,7 +365,24 @@ test('public share opens without login and can be saved after signing in', async
 
   await page.getByRole('button', { name: '新建笔记', exact: false }).first().click()
   await page.getByLabel('笔记标题', { exact: true }).fill('可以公开阅读的 Orion 文章')
-  await page.getByRole('textbox', { name: '笔记正文' }).fill('这篇文章不登录也可以阅读，登录以后可以收藏。')
+  const ownerEditor = page.getByRole('textbox', { name: '笔记正文' })
+  await ownerEditor.fill('这篇文章不登录也可以阅读，登录以后可以收藏。')
+  await ownerEditor.click()
+  await page.evaluate(() => {
+    const base64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0))
+    const data = new DataTransfer()
+    data.items.add(new File([bytes], 'shared-private.png', { type: 'image/png' }))
+    document.querySelector<HTMLElement>('[contenteditable="true"]')?.dispatchEvent(
+      new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: data }),
+    )
+  })
+  await expect(page.getByRole('img', { name: 'shared-private.png' })).toHaveAttribute(
+    'data-orion-private-image',
+    /^[A-Za-z0-9_-]{40,64}$/,
+    { timeout: 15000 },
+  )
   await page.getByRole('button', { name: '分享文章' }).click()
 
   const shareDialog = page.getByRole('dialog', { name: '分享这篇笔记' })
@@ -378,6 +395,10 @@ test('public share opens without login and can be saved after signing in', async
   await reader.goto(shareUrl)
   await expect(reader.getByRole('heading', { name: '可以公开阅读的 Orion 文章' })).toBeVisible()
   await expect(reader.getByText('这篇文章不登录也可以阅读，登录以后可以收藏。')).toBeVisible()
+  await expect(reader.getByRole('img', { name: 'shared-private.png' })).toHaveAttribute(
+    'src',
+    /^http:\/\/localhost:8787\/v1\/images\//,
+  )
   await expect(reader.getByRole('button', { name: '登录后收藏' })).toBeVisible()
 
   await reader.getByRole('button', { name: '登录后收藏' }).click()
