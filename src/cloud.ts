@@ -24,6 +24,7 @@ type EncryptedWorkspace = {
   encryption: 'aes-256-gcm-v1'
   iv: string
   ciphertext: string
+  imageIds: string[]
 }
 
 export type PublicShare = {
@@ -116,7 +117,12 @@ function isEncryptedWorkspace(value: unknown): value is EncryptedWorkspace {
     typeof envelope.iv === 'string' &&
     /^[A-Za-z0-9_-]{16}$/.test(envelope.iv) &&
     typeof envelope.ciphertext === 'string' &&
-    /^[A-Za-z0-9_-]+$/.test(envelope.ciphertext)
+    /^[A-Za-z0-9_-]+$/.test(envelope.ciphertext) &&
+    Array.isArray(envelope.imageIds) &&
+    envelope.imageIds.length <= 5000 &&
+    envelope.imageIds.every(
+      (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{40,64}$/.test(id),
+    )
   )
 }
 
@@ -133,6 +139,14 @@ async function vaultKey(session: CloudSession, usage: KeyUsage[]) {
 async function encryptWorkspace(session: CloudSession, workspace: Workspace): Promise<EncryptedWorkspace> {
   const iv = crypto.getRandomValues(new Uint8Array(12))
   const key = await vaultKey(session, ['encrypt'])
+  const serialized = JSON.stringify(workspace)
+  const imageIds = [
+    ...new Set(
+      [...serialized.matchAll(/\/v1\/images\/([A-Za-z0-9_-]{40,64})/g)].map(
+        (match) => match[1],
+      ),
+    ),
+  ]
   const ciphertext = new Uint8Array(
     await crypto.subtle.encrypt(
       {
@@ -141,7 +155,7 @@ async function encryptWorkspace(session: CloudSession, workspace: Workspace): Pr
         additionalData: encoder.encode(`orion-note-learn:workspace:v1:${session.user.id}`),
       },
       key,
-      encoder.encode(JSON.stringify(workspace)),
+      encoder.encode(serialized),
     ),
   )
   return {
@@ -149,6 +163,7 @@ async function encryptWorkspace(session: CloudSession, workspace: Workspace): Pr
     encryption: 'aes-256-gcm-v1',
     iv: toBase64Url(iv),
     ciphertext: toBase64Url(ciphertext),
+    imageIds,
   }
 }
 
