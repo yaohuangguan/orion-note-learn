@@ -480,7 +480,7 @@ test('AI results integrate into notes and cards without storing the key', async 
   await configureAI(page)
   await page.route('**/api/ai', async (route) => {
     const body = route.request().postDataJSON()
-    expect(body.content).toContain('学习不只是收集信息')
+    expect(body.content).toContain('Orion 是一个本地优先、隐私优先的学习笔记空间')
     expect(body.apiKey).toBe('test-key-not-a-real-secret')
     const content =
       body.task === 'cards'
