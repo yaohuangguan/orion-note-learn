@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { scheduleCard, parseCards, workspaceSchema, type Card } from '../src/domain'
 import { seedWorkspace } from '../src/seed'
+import { upgradeOnboardingNotes } from '../src/onboarding'
 import { completionUrl } from '../server/policy'
 const card: Card = {
   id: '1',
@@ -48,6 +49,26 @@ describe('starter onboarding', () => {
     expect(english?.html).toContain('OCR source photos are not uploaded')
     expect(english?.html).toContain('private vault key is never sent')
     expect(english?.html).toContain('Public only when you choose')
+  })
+})
+
+describe('onboarding migration', () => {
+  it('adds the English intro once without overwriting an edited welcome note', () => {
+    const workspace = seedWorkspace()
+    workspace.notes = workspace.notes.filter((note) => note.id !== 'welcome-en')
+    workspace.folders = workspace.folders.filter((folder) => folder !== 'Getting Started')
+    const welcome = workspace.notes.find((note) => note.id === 'welcome')!
+    welcome.html = '<p>我自己修改过的欢迎笔记</p>'
+
+    const upgraded = upgradeOnboardingNotes(workspace)
+    expect(upgraded.notes.find((note) => note.id === 'welcome')?.html).toBe(
+      '<p>我自己修改过的欢迎笔记</p>',
+    )
+    expect(upgraded.notes.filter((note) => note.id === 'welcome-en')).toHaveLength(1)
+    expect(upgraded.folders).toContain('Getting Started')
+
+    const twice = upgradeOnboardingNotes(upgraded)
+    expect(twice.notes.filter((note) => note.id === 'welcome-en')).toHaveLength(1)
   })
 })
 
