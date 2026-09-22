@@ -40,6 +40,8 @@ const CHUNK_BYTES = 1_500_000
 const MAX_WORKSPACE_BYTES = 24_000_000
 const MAX_SHARE_BYTES = 8_000_000
 const MAX_IMAGE_BYTES = 12_000_000
+const MAX_ENCRYPTED_IMAGE_BYTES = MAX_IMAGE_BYTES + 1024
+const ENCRYPTED_IMAGE_TYPE = 'application/vnd.orion.encrypted-image'
 const IMAGE_TYPES = new Map([
   ['image/png', 'png'],
   ['image/jpeg', 'jpg'],
@@ -472,7 +474,8 @@ async function getImage(id: string, env: Env) {
   )
     .bind(id)
     .first<{ object_key: string; content_type: string }>()
-  if (!record) throw new ApiError(404, '图片不存在。')
+  if (!record || record.content_type === ENCRYPTED_IMAGE_TYPE)
+    throw new ApiError(404, '图片不存在。')
   const object = await env.IMAGES.get(record.object_key)
   if (!object || !('body' in object)) throw new ApiError(404, '图片不存在。')
   const headers = new Headers({
@@ -517,6 +520,62 @@ async function uploadImage(request: Request, user: SessionUser, env: Env) {
   return json({ src: `${url.origin}/v1/images/${publicId}`, id: publicId }, 201)
 }
 
+async function uploadEncryptedImage(request: Request, user: SessionUser, env: Env) {
+  const contentType =
+    request.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() || ''
+  if (contentType !== 'application/octet-stream')
+    throw new ApiError(415, '加密图片格式不正确。')
+  const declared = Number(request.headers.get('Content-Length') || 0)
+  if (declared > MAX_ENCRYPTED_IMAGE_BYTES)
+    throw new ApiError(413, '加密图片不能超过 12 MB。')
+  const content = await request.arrayBuffer()
+  if (content.byteLength < 30 || content.byteLength > MAX_ENCRYPTED_IMAGE_BYTES)
+    throw new ApiError(413, '加密图片为空或超过 12 MB。')
+
+  const publicId = toBase64Url(crypto.getRandomValues(new Uint8Array(32)))
+  const objectKey = `${user.id}/private/${publicId}.bin`
+  await env.IMAGES.put(objectKey, content, {
+    httpMetadata: {
+      contentType: 'application/octet-stream',
+      cacheControl: 'private, max-age=31536000, immutable',
+    },
+    customMetadata: { owner: user.id, encrypted: 'aes-256-gcm-v1' },
+  })
+  try {
+    await env.DB.prepare(
+      'INSERT INTO images (public_id, user_id, object_key, content_type, size, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    )
+      .bind(publicId, user.id, objectKey, ENCRYPTED_IMAGE_TYPE, content.byteLength, Date.now())
+      .run()
+  } catch (error) {
+    await env.IMAGES.delete(objectKey)
+    throw error
+  }
+  const url = new URL(request.url)
+  return json({ src: `${url.origin}/v1/private-images/${publicId}`, id: publicId }, 201)
+}
+
+async function getEncryptedImage(id: string, user: SessionUser, env: Env) {
+  if (!/^[A-Za-z0-9_-]{40,64}$/.test(id)) throw new ApiError(404, '加密图片不存在。')
+  const record = await env.DB.prepare(
+    'SELECT object_key, content_type FROM images WHERE public_id = ? AND user_id = ?',
+  )
+    .bind(id, user.id)
+    .first<{ object_key: string; content_type: string }>()
+  if (!record || record.content_type !== ENCRYPTED_IMAGE_TYPE)
+    throw new ApiError(404, '加密图片不存在。')
+  const object = await env.IMAGES.get(record.object_key)
+  if (!object || !('body' in object)) throw new ApiError(404, '加密图片不存在。')
+  return new Response(object.body, {
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Cache-Control': 'private, no-store',
+      ETag: object.httpEtag,
+      'X-Content-Type-Options': 'nosniff',
+    },
+  })
+}
+
 function referencedImages(workspace: Record<string, unknown>) {
   const ids = new Set<string>()
   const notes = Array.isArray(workspace.notes) ? workspace.notes : []
@@ -530,7 +589,24 @@ function referencedImages(workspace: Record<string, unknown>) {
   return ids
 }
 
+async function addPublicShareImageReferences(
+  userId: string,
+  referenced: Set<string>,
+  env: Env,
+) {
+  const result = await env.DB.prepare(
+    'SELECT c.content FROM public_share_chunks c JOIN public_shares s ON s.id = c.share_id WHERE s.user_id = ?',
+  )
+    .bind(userId)
+    .all<{ content: string }>()
+  for (const row of result.results) {
+    for (const match of row.content.matchAll(/\/v1\/images\/([A-Za-z0-9_-]{40,64})/g))
+      referenced.add(match[1])
+  }
+}
+
 async function cleanupUnusedImages(userId: string, referenced: Set<string>, env: Env) {
+  await addPublicShareImageReferences(userId, referenced, env)
   const cutoff = Date.now() - 24 * 60 * 60 * 1000
   const result = await env.DB.prepare(
     'SELECT public_id, object_key FROM images WHERE user_id = ? AND created_at < ? LIMIT 500',
@@ -618,6 +694,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext) {
     return json({ ok: true, service: 'orion-note-learn-sync' })
   const imageMatch = path.match(/^\/v1\/images\/([A-Za-z0-9_-]+)$/)
   if (request.method === 'GET' && imageMatch) return getImage(imageMatch[1], env)
+  const privateImageMatch = path.match(/^\/v1\/private-images\/([A-Za-z0-9_-]+)$/)
   const shareMatch = path.match(/^\/v1\/shares\/([A-Za-z0-9_-]+)$/)
   if (request.method === 'GET' && shareMatch) return getPublicShare(shareMatch[1], env)
   if (request.method === 'POST' && path === '/v1/auth/register') return register(request, env)
@@ -631,6 +708,10 @@ async function route(request: Request, env: Env, ctx: ExecutionContext) {
   }
   if (request.method === 'POST' && path === '/v1/images')
     return uploadImage(request, session.user, env)
+  if (request.method === 'POST' && path === '/v1/private-images')
+    return uploadEncryptedImage(request, session.user, env)
+  if (request.method === 'GET' && privateImageMatch)
+    return getEncryptedImage(privateImageMatch[1], session.user, env)
   if (request.method === 'POST' && path === '/v1/shares')
     return publishShare(request, session.user, env)
   if (request.method === 'DELETE' && shareMatch)
@@ -703,6 +784,10 @@ const englishErrors: Record<string, string> = {
     'Upload a PNG, JPEG, GIF, WebP, or AVIF image.',
   '图片不能超过 12 MB。': 'Images must be 12 MB or smaller.',
   '图片为空或超过 12 MB。': 'The image is empty or larger than 12 MB.',
+  '加密图片格式不正确。': 'The encrypted image format is invalid.',
+  '加密图片不能超过 12 MB。': 'Encrypted images must be 12 MB or smaller.',
+  '加密图片为空或超过 12 MB。': 'The encrypted image is empty or larger than 12 MB.',
+  '加密图片不存在。': 'Encrypted image not found.',
   '工作区数据格式不正确。': 'The workspace data is invalid.',
   '同步版本不正确。': 'The sync revision is invalid.',
   '云端已有更新，请先合并后重试。':
