@@ -997,6 +997,7 @@ export default function App() {
                       key={note.id}
                       note={note}
                       settings={settings}
+                      cloudSession={cloudSession}
                       onSettings={() => setDialog('settings')}
                       onClose={() => setAiOpen(false)}
                       onAddCards={addCards}
