@@ -6,6 +6,7 @@ async function ready(page: Page) {
 }
 async function configureAI(page: Page) {
   await page.getByRole('button', { name: '设置', exact: true }).click()
+  await page.getByLabel('AI 服务商').selectOption('deepseek')
   await page.getByLabel('API Key', { exact: true }).fill('test-key-not-a-real-secret')
   await page.getByRole('button', { name: '保存设置', exact: true }).click()
 }
@@ -514,10 +515,33 @@ test('review ratings persist the next review date', async ({ page }) => {
   await page.getByRole('button', { name: /学习与复习/ }).click()
   await expect(page.getByText('暂时没有待复习的闪卡')).toBeVisible()
 })
+test('free study partner works without an API key and shows remaining quota', async ({ page }) => {
+  await ready(page)
+  await page.route('**/v1/ai/free', async (route) => {
+    const body = route.request().postDataJSON()
+    expect(body.apiKey).toBeUndefined()
+    expect(body.content).toContain('Orion 是一个本地优先、隐私优先的学习笔记空间')
+    await route.fulfill({
+      json: {
+        content: '## 免费学习伙伴\n\n这是一次无需 API Key 的学习总结。',
+        provider: 'orion-free',
+        model: '@cf/zai-org/glm-4.7-flash',
+        remaining: 2,
+        limit: 3,
+      },
+    })
+  })
+
+  await expect(page.getByText(/Orion 免费试用/)).toBeVisible()
+  await page.getByRole('button', { name: /提炼重点/ }).click()
+  await expect(page.locator('.ai-result')).toContainText('免费学习伙伴')
+  await expect(page.getByText(/今日剩余 2 次/)).toBeVisible()
+})
+
 test('AI results integrate into notes and cards without storing the key', async ({ page }) => {
   await ready(page)
   await configureAI(page)
-  await page.route('**/api/ai', async (route) => {
+  await page.route('**/v1/ai/byok', async (route) => {
     const body = route.request().postDataJSON()
     expect(body.content).toContain('Orion 是一个本地优先、隐私优先的学习笔记空间')
     expect(body.apiKey).toBe('test-key-not-a-real-secret')
@@ -554,13 +578,13 @@ test('AI results integrate into notes and cards without storing the key', async 
 test('AI errors and invalid generated cards are visible', async ({ page }) => {
   await ready(page)
   await configureAI(page)
-  await page.route('**/api/ai', (route) =>
+  await page.route('**/v1/ai/byok', (route) =>
     route.fulfill({ status: 502, json: { error: 'API Key 无效或没有访问该模型的权限。' } }),
   )
   await page.getByRole('button', { name: /提炼重点/ }).click()
   await expect(page.getByRole('alert')).toContainText('API Key 无效')
-  await page.unroute('**/api/ai')
-  await page.route('**/api/ai', (route) => route.fulfill({ json: { content: '{"cards":[]}' } }))
+  await page.unroute('**/v1/ai/byok')
+  await page.route('**/v1/ai/byok', (route) => route.fulfill({ json: { content: '{"cards":[]}' } }))
   await page.getByRole('button', { name: /生成闪卡/ }).click()
   await expect(page.getByRole('alert')).toContainText('闪卡格式不正确')
 })
