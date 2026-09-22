@@ -2,6 +2,7 @@ import { openDB } from 'idb'
 import DOMPurify from 'dompurify'
 import { workspaceSchema, type Workspace } from './domain'
 import { seedWorkspace } from './seed'
+import { upgradeOnboardingNotes } from './onboarding'
 import { PRIVATE_IMAGE_ATTR } from './private-images'
 
 const db = openDB('orion-note-learn', 1, {
@@ -26,7 +27,8 @@ function safeImageSource(src: string) {
 }
 export async function loadWorkspace(): Promise<Workspace> {
   const saved = await (await db).get('workspace', 'data')
-  return saved ? sanitizeWorkspace(workspaceSchema.parse(saved)) : seedWorkspace()
+  if (!saved) return seedWorkspace()
+  return upgradeOnboardingNotes(sanitizeWorkspace(workspaceSchema.parse(saved)))
 }
 let writes = Promise.resolve()
 export function saveWorkspace(data: Workspace) {
