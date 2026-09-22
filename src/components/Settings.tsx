@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { KeyRound, ShieldCheck, ExternalLink } from 'lucide-react'
 import { providers, type AISettings } from '../domain'
 import { Modal } from './Modal'
+import PrivacyPromise from './PrivacyPromise'
 import { useI18n } from '../i18n'
 
 export default function Settings({
@@ -26,6 +27,7 @@ export default function Settings({
           <p>{pick('选择服务商，让 AI 帮你理解当前笔记。', 'Choose a provider and let AI help you understand this note.')}</p>
         </div>
       </div>
+      <PrivacyPromise className="settings-privacy-promise" />
       <form
         onSubmit={(e) => {
           e.preventDefault()
@@ -103,8 +105,8 @@ export default function Settings({
         </div>
         <p className="field-help">
           {pick(
-            '笔记始终先保存在当前浏览器。登录后，标题、正文、标签、手写、闪卡、复习数据和私人图片附件都会在浏览器内使用 AES-256-GCM 加密后同步；D1 与 R2 只保存密文，服务端不会收到私人空间密钥。只有你主动“公开分享”的文章才会生成可阅读副本。',
-            'Notes are always saved in this browser first. After sign-in, titles, note text, tags, drawings, flashcards, review data, and private image attachments are encrypted in-browser with AES-256-GCM before syncing. D1 and R2 store ciphertext only, and the service never receives your private vault key. Only articles you explicitly publish create readable copies.',
+            'AI 功能与私人云同步是两条独立路径：只有你主动运行 AI 功能时，当前笔记文字才会发送到你选择的 AI 服务商。',
+            'AI actions and private cloud sync are separate paths. Note text is sent to your chosen AI provider only when you explicitly run an AI action.',
           )}
         </p>
         <div className="modal-actions">
