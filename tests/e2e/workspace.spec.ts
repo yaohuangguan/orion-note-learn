@@ -122,7 +122,8 @@ test('local OCR imports recognized text without uploading the source image', asy
   await ready(page)
   await page.getByRole('button', { name: '拍照 / 图片 OCR' }).click()
   const dialog = page.getByRole('dialog', { name: '拍照 / 图片 OCR 导入' })
-  await expect(dialog.getByText('图片不会上传，也不会存储')).toBeVisible()
+  await expect(dialog.getByText('隐私优先，而不是事后补救')).toBeVisible()
+  await expect(dialog.getByText('拍照和上传图片的文字识别在浏览器本地完成，OCR 原图不会上传或保存到 Orion。')).toBeVisible()
 
   await dialog.getByLabel('上传图片识别文字').setInputFiles({
     name: 'handwritten-notes.png',
@@ -152,6 +153,7 @@ test('account sync restores end-to-end encrypted private images on another devic
   await ready(page)
   await page.getByRole('button', { name: '账户与云同步' }).click()
   const account = page.getByRole('dialog', { name: '登录 Orion Note Learn' })
+  await expect(account.getByText('隐私优先，而不是事后补救')).toBeVisible()
   await account.getByRole('tab', { name: '注册' }).click()
   await account.getByLabel('邮箱').fill(email)
   await account.getByLabel('密码').fill(password)
@@ -422,13 +424,15 @@ test('English UI can be selected and persists after reload', async ({ page }) =>
   await page.getByLabel('界面语言').selectOption('en')
   const settings = page.getByRole('dialog', { name: 'AI & preferences' })
   await expect(settings.getByText('Your AI, your key')).toBeVisible()
+  await expect(settings.getByText('Private by design, not as an afterthought')).toBeVisible()
   await settings.getByRole('button', { name: 'Save settings' }).click()
 
   await expect(page.getByRole('button', { name: 'New note', exact: false }).first()).toBeVisible()
   await expect(page.getByLabel('Search notes')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: 'All notes', exact: false })).toBeVisible()
-  await expect(page.getByLabel('Note title')).toBeVisible()
+  await expect(page.getByLabel('Note title')).toHaveValue('Welcome to Orion — Learn privately, remember deeply')
+  await expect(page.getByRole('textbox', { name: 'Note content' })).toContainText('Private by design')
 })
 test('handwriting supports strokes, undo, redo and reload', async ({ page }) => {
   await ready(page)
