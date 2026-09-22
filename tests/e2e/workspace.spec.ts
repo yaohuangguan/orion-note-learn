@@ -425,6 +425,8 @@ test('PWA manifest and service worker are available without caching private rout
   expect(manifestJson.name).toBe('Orion Note Learn')
   expect(manifestJson.display).toBe('standalone')
   expect(manifestJson.start_url).toBe('/')
+  expect(manifestJson.icons.some((icon: { sizes?: string }) => icon.sizes === '192x192')).toBe(true)
+  expect(manifestJson.icons.some((icon: { sizes?: string }) => icon.sizes === '512x512')).toBe(true)
 
   const worker = await page.request.get('/sw.js')
   expect(worker.ok()).toBe(true)
@@ -435,6 +437,24 @@ test('PWA manifest and service worker are available without caching private rout
 
   await page.goto('/')
   await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
+})
+
+test('iOS shows manual PWA install guidance instead of waiting for beforeinstallprompt', async ({ browser }) => {
+  const context = await browser.newContext({
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+    viewport: { width: 390, height: 844 },
+  })
+  const page = await context.newPage()
+  await page.goto('/')
+  await expect(page.getByLabel('笔记标题', { exact: true })).toHaveValue('把学过的，变成真正掌握的')
+  await page.getByRole('button', { name: '打开侧栏' }).click()
+  await page.getByRole('button', { name: '安装 Orion 应用' }).click()
+
+  const dialog = page.getByRole('dialog', { name: '安装 Orion 到 iPhone / iPad' })
+  await expect(dialog.getByText('选择“添加到主屏幕”')).toBeVisible()
+  await expect(dialog.getByText('打开“作为网页 App 打开”并添加')).toBeVisible()
+  await context.close()
 })
 
 test('English UI can be selected and persists after reload', async ({ page }) => {
