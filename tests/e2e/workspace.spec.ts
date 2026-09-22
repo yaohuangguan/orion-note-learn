@@ -418,6 +418,25 @@ test('public share opens without login and can be saved after signing in', async
   await readerContext.close()
 })
 
+test('PWA manifest and service worker are available without caching private routes', async ({ page }) => {
+  const manifest = await page.request.get('/manifest.webmanifest')
+  expect(manifest.ok()).toBe(true)
+  const manifestJson = await manifest.json()
+  expect(manifestJson.name).toBe('Orion Note Learn')
+  expect(manifestJson.display).toBe('standalone')
+  expect(manifestJson.start_url).toBe('/')
+
+  const worker = await page.request.get('/sw.js')
+  expect(worker.ok()).toBe(true)
+  const source = await worker.text()
+  expect(source).toContain("url.pathname.startsWith('/api/')")
+  expect(source).toContain("url.pathname.startsWith('/share/')")
+  expect(source).toContain("url.pathname.startsWith('/assets/')")
+
+  await page.goto('/')
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute('href', '/manifest.webmanifest')
+})
+
 test('English UI can be selected and persists after reload', async ({ page }) => {
   await ready(page)
   await page.getByRole('button', { name: '设置', exact: true }).click()
