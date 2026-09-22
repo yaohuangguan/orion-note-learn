@@ -535,6 +535,7 @@ export async function runStudyAI(
     language: 'zh' | 'en'
   },
   session: CloudSession | null = loadCloudSession(),
+  signal?: AbortSignal,
 ) {
   const free = settings.provider === 'orion-free'
   return request<StudyAiResponse>(
