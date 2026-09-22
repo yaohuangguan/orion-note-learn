@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/share/:shareId",
-      "destination": "/index.html"
+      "destination": "/api/share-page?shareId=:shareId"
     }
   ]
 }
