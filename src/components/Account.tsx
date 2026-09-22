@@ -3,6 +3,7 @@ import { Cloud, CloudOff, LogIn, RefreshCw, ShieldCheck, UserPlus } from 'lucide
 import type { CloudSession } from '../cloud'
 import { CloudApiError } from '../cloud'
 import { Modal } from './Modal'
+import PrivacyPromise from './PrivacyPromise'
 import { useI18n } from '../i18n'
 
 type SyncState = 'idle' | 'checking' | 'syncing' | 'synced' | 'error' | 'unavailable'
@@ -87,13 +88,7 @@ export default function Account({
             {error}
           </p>
         ) : null}
-        <div className="privacy-note">
-          <ShieldCheck size={20} />
-          <p>{pick(
-            '标题、正文、标签、手写内容、闪卡、复习进度和私人图片附件都会在浏览器端加密后再上传。D1 与 R2 只保存密文，服务端不会收到私人笔记的解密密钥。只有你主动公开分享的文章会生成可阅读副本；AI Key 不会上传。',
-            'Titles, note text, tags, drawings, flashcards, review progress, and private image attachments are encrypted in your browser before upload. D1 and R2 store ciphertext only, and the service never receives the decryption key for private notes. Only articles you explicitly publish create readable copies. Your AI key is never uploaded.',
-          )}</p>
-        </div>
+        <PrivacyPromise className="account-privacy-promise" />
         <div className="modal-actions account-actions">
           <button
             className="button secondary"
@@ -119,6 +114,7 @@ export default function Account({
           <p>{pick('本地优先保存，登录后自动同步到你的私有空间。', 'Save locally first, then sync automatically to your private space.')}</p>
         </div>
       </div>
+      <PrivacyPromise className="account-privacy-promise" />
       {syncState === 'unavailable' ? (
         <p className="error-box" role="alert">
           {pick(
@@ -186,8 +182,8 @@ export default function Account({
             <div className="privacy-note">
               <ShieldCheck size={20} />
               <p>{pick(
-                '密码只在设备端用于推导登录证明和私人空间密钥，密码本身不会上传。私人笔记与图片附件在离开浏览器前使用 AES-256-GCM 加密；服务端存储的是密文。主动创建的公开分享文章除外。',
-                'Your password is used on-device to derive the sign-in proof and private vault key; the password itself is never uploaded. Private notes and image attachments are encrypted with AES-256-GCM before leaving your browser, so the service stores ciphertext. Articles you explicitly publish are the exception.',
+                '密码只在当前设备上用于推导登录证明和私人空间密钥，密码本身不会上传；AI Key 也不会进入云同步。',
+                'Your password is used on this device to derive the sign-in proof and private vault key; the password itself is never uploaded. Your AI key is never included in cloud sync.',
               )}</p>
             </div>
             <div className="modal-actions">

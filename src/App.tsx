@@ -101,7 +101,7 @@ function date(value: number, locale: 'zh-CN' | 'en-US') {
 }
 
 export default function App() {
-  const { locale, pick } = useI18n()
+  const { language, locale, pick } = useI18n()
   const [data, setData] = useState<Workspace | null>(null)
   const [loadError, setLoadError] = useState('')
   const [saveState, setSaveState] = useState<'saving' | 'saved' | 'error'>('saving')
@@ -118,7 +118,9 @@ export default function App() {
   const cloudPendingWorkspace = useRef<Workspace | null>(null)
   const cloudLastPushed = useRef<Workspace | null>(null)
   const [selectedId, setSelectedId] = useState(
-    () => new URLSearchParams(window.location.search).get('note') || 'welcome',
+    () =>
+      new URLSearchParams(window.location.search).get('note') ||
+      (language === 'en' ? 'welcome-en' : 'welcome'),
   )
   const [view, setView] = useState<View>('editor')
   const [folder, setFolder] = useState('')

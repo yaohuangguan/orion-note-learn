@@ -35,6 +35,22 @@ describe('AI flashcard parsing', () => {
     expect(() => parseCards('not JSON')).toThrow()
   })
 })
+describe('starter onboarding', () => {
+  it('ships Chinese and English privacy-first welcome notes', () => {
+    const workspace = seedWorkspace()
+    const chinese = workspace.notes.find((note) => note.id === 'welcome')
+    const english = workspace.notes.find((note) => note.id === 'welcome-en')
+
+    expect(chinese?.html).toContain('OCR 原图不会上传')
+    expect(chinese?.html).toContain('AES-256-GCM')
+    expect(chinese?.html).toContain('主动分享才公开')
+    expect(english?.title).toBe('Welcome to Orion — Learn privately, remember deeply')
+    expect(english?.html).toContain('OCR source photos are not uploaded')
+    expect(english?.html).toContain('private vault key is never sent')
+    expect(english?.html).toContain('Public only when you choose')
+  })
+})
+
 describe('backup validation', () => {
   it('accepts versioned notes and schedules', () =>
     expect(workspaceSchema.parse(seedWorkspace()).version).toBe(1))
