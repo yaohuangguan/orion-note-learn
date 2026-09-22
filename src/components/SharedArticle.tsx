@@ -51,9 +51,13 @@ function ReadonlyArticleBody({ html }: { html: string }) {
 
 export default function SharedArticle({ shareId }: { shareId: string }) {
   const { locale, pick } = useI18n()
-  const [share, setShare] = useState<PublicShare | null>(null)
+  const bootShare = (
+    window as typeof window & { __ORION_PUBLIC_SHARE__?: PublicShare }
+  ).__ORION_PUBLIC_SHARE__
+  const initialShare = bootShare?.id === shareId ? bootShare : null
+  const [share, setShare] = useState<PublicShare | null>(initialShare)
   const [session, setSession] = useState<CloudSession | null>(loadCloudSession)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialShare)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [authOpen, setAuthOpen] = useState(false)
@@ -62,6 +66,7 @@ export default function SharedArticle({ shareId }: { shareId: string }) {
   const [authError, setAuthError] = useState('')
 
   useEffect(() => {
+    if (initialShare) return
     let live = true
     fetchPublicShare(shareId)
       .then((value) => {
