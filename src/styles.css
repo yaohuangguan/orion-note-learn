@@ -3137,3 +3137,36 @@ svg {
 .free-ai-status .text-button {
   font-size: 11px;
 }
+
+
+/* Mobile edge gestures */
+.mobile-edge-gesture {
+  display: none;
+}
+@media (max-width: 860px) {
+  .mobile-edge-gesture {
+    display: block;
+    position: fixed;
+    top: 65px;
+    bottom: 0;
+    width: 30px;
+    z-index: 39;
+    touch-action: pan-y;
+    background: transparent;
+  }
+  .mobile-edge-gesture-left {
+    left: 0;
+  }
+  .mobile-edge-gesture-right {
+    right: 0;
+  }
+  .sidebar,
+  .ai-panel {
+    touch-action: pan-y;
+  }
+}
+@media (max-width: 560px) {
+  .mobile-edge-gesture {
+    top: 60px;
+  }
+}

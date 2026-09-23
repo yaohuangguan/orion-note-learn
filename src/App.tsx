@@ -75,6 +75,7 @@ import {
 } from './cloud'
 import { useI18n } from './i18n'
 import { usePwaInstall } from './pwa'
+import { useMobilePanelGestures } from './mobile-gestures'
 
 const Drawing = lazy(() => import('./components/Drawing'))
 const AIPanel = lazy(() => import('./components/AIPanel'))
@@ -167,6 +168,27 @@ export default function App() {
     .sort((a, b) => b.updatedAt - a.updatedAt)
   const allFolders = [...new Set([...(data?.folders || []), ...active.map((n) => n.folder)])]
   const notify = useCallback((message: string) => setToast(message), [])
+  const openMobileSidebar = useCallback(() => {
+    setAiOpen(false)
+    setSidebarOpen(true)
+  }, [])
+  const closeMobileSidebar = useCallback(() => setSidebarOpen(false), [])
+  const openMobileAI = useCallback(() => {
+    setSidebarOpen(false)
+    setAiOpen(true)
+  }, [])
+  const closeMobileAI = useCallback(() => setAiOpen(false), [])
+
+  useMobilePanelGestures({
+    leftOpen: sidebarOpen,
+    rightOpen: aiOpen,
+    rightEnabled: view === 'editor' && Boolean(note),
+    disabled: Boolean(dialog),
+    onOpenLeft: openMobileSidebar,
+    onCloseLeft: closeMobileSidebar,
+    onOpenRight: openMobileAI,
+    onCloseRight: closeMobileAI,
+  })
 
   async function syncCloudSnapshot(workspace: Workspace, session: CloudSession) {
     if (cloudUploadInFlight.current) {
@@ -585,6 +607,14 @@ export default function App() {
     )
   return (
     <div className="app-shell">
+      {!sidebarOpen && !aiOpen ? (
+        <>
+          <div className="mobile-edge-gesture mobile-edge-gesture-left" data-edge-gesture="left" aria-hidden="true" />
+          {view === 'editor' && note ? (
+            <div className="mobile-edge-gesture mobile-edge-gesture-right" data-edge-gesture="right" aria-hidden="true" />
+          ) : null}
+        </>
+      ) : null}
       {sidebarOpen ? (
         <button
           className="sidebar-scrim"
