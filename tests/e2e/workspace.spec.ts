@@ -628,6 +628,119 @@ test('downloads a real PDF with Chinese note content', async ({ page }) => {
   expect(content.subarray(0, 4).toString()).toBe('%PDF')
   expect(content.length).toBeGreaterThan(10000)
 })
+test('mobile edge swipes open and close the left and right panels', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await ready(page)
+
+  const leftEdge = page.locator('[data-edge-gesture="left"]')
+  await leftEdge.dispatchEvent('pointerdown', {
+    pointerId: 11,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 8,
+    clientY: 420,
+    buttons: 1,
+  })
+  await leftEdge.dispatchEvent('pointermove', {
+    pointerId: 11,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 92,
+    clientY: 424,
+    buttons: 1,
+  })
+  await leftEdge.dispatchEvent('pointerup', {
+    pointerId: 11,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 104,
+    clientY: 424,
+    buttons: 0,
+  })
+  await expect(page.locator('.sidebar')).toHaveClass(/open/)
+
+  const sidebar = page.locator('.sidebar')
+  await sidebar.dispatchEvent('pointerdown', {
+    pointerId: 12,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 180,
+    clientY: 420,
+    buttons: 1,
+  })
+  await sidebar.dispatchEvent('pointermove', {
+    pointerId: 12,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 96,
+    clientY: 423,
+    buttons: 1,
+  })
+  await sidebar.dispatchEvent('pointerup', {
+    pointerId: 12,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 78,
+    clientY: 423,
+    buttons: 0,
+  })
+  await expect(page.locator('.sidebar')).not.toHaveClass(/open/)
+
+  const rightEdge = page.locator('[data-edge-gesture="right"]')
+  await rightEdge.dispatchEvent('pointerdown', {
+    pointerId: 13,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 382,
+    clientY: 420,
+    buttons: 1,
+  })
+  await rightEdge.dispatchEvent('pointermove', {
+    pointerId: 13,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 305,
+    clientY: 418,
+    buttons: 1,
+  })
+  await rightEdge.dispatchEvent('pointerup', {
+    pointerId: 13,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 286,
+    clientY: 418,
+    buttons: 0,
+  })
+  await expect(page.getByLabel('AI 学习伙伴')).toBeVisible()
+
+  const aiPanel = page.getByLabel('AI 学习伙伴')
+  await aiPanel.dispatchEvent('pointerdown', {
+    pointerId: 14,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 260,
+    clientY: 420,
+    buttons: 1,
+  })
+  await aiPanel.dispatchEvent('pointermove', {
+    pointerId: 14,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 334,
+    clientY: 423,
+    buttons: 1,
+  })
+  await aiPanel.dispatchEvent('pointerup', {
+    pointerId: 14,
+    pointerType: 'touch',
+    isPrimary: true,
+    clientX: 352,
+    clientY: 423,
+    buttons: 0,
+  })
+  await expect(page.getByLabel('AI 学习伙伴')).toHaveCount(0)
+})
+
 for (const size of [
   { width: 390, height: 844 },
   { width: 820, height: 1180 },
