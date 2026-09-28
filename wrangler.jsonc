@@ -19,7 +19,7 @@
     }
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,https://orion-note-learn.vercel.app,https://note.samyao.me",
+    "ALLOWED_ORIGINS": "http://localhost:5173,http://localhost:5174,https://orion-note-learn.vercel.app",
     "AI_ALLOWED_HOSTS": ""
   },
   "observability": {
