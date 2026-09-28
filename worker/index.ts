@@ -5,6 +5,7 @@ interface Env {
   IMAGES: R2Bucket
   AI: Ai
   ALLOWED_ORIGINS: string
+  CAPTURE_ORIGINS?: string
   AI_ALLOWED_HOSTS: string
   AUTH_PEPPER: string
 }
@@ -45,6 +46,10 @@ const MAX_WORKSPACE_BYTES = 24_000_000
 const MAX_SHARE_BYTES = 8_000_000
 const MAX_IMAGE_BYTES = 12_000_000
 const MAX_ENCRYPTED_IMAGE_BYTES = MAX_IMAGE_BYTES + 1024
+const MAX_CAPTURE_BYTES = 1_500_000
+const MAX_CAPTURE_CONTENT_BYTES = 1_000_000
+const CAPTURE_KINDS = new Set(['page', 'article', 'selection'])
+const CAPTURE_FORMATS = new Set(['text', 'markdown', 'html'])
 const FREE_AI_MODEL = '@cf/zai-org/glm-4.7-flash'
 const AI_WINDOW_MS = 24 * 60 * 60 * 1000
 const AI_GUEST_DAILY_LIMIT = 3
@@ -79,7 +84,9 @@ function allowedOrigin(request: Request, env: Env) {
   const origin = request.headers.get('Origin')
   if (!origin) return ''
   const allowed = new Set(
-    env.ALLOWED_ORIGINS.split(',')
+    [env.ALLOWED_ORIGINS, env.CAPTURE_ORIGINS || '']
+      .join(',')
+      .split(',')
       .map((value) => value.trim().replace(/\/$/, ''))
       .filter(Boolean),
   )
@@ -936,6 +943,198 @@ async function byokAi(request: Request, env: Env) {
   return json({ content, provider: 'byok', model })
 }
 
+type CaptureRow = {
+  id: string
+  kind: string
+  title: string
+  url: string
+  content_format: string | null
+  content: string | null
+  selection: string | null
+  excerpt: string | null
+  author: string | null
+  site_name: string | null
+  tags_json: string
+  captured_at: number
+  created_at: number
+}
+
+function optionalText(value: unknown, max: number, field: string) {
+  if (value === undefined || value === null || value === '') return null
+  if (typeof value !== 'string') throw new ApiError(400, `${field} 格式不正确。`)
+  const text = value.trim()
+  if (!text) return null
+  if ([...text].length > max) throw new ApiError(400, `${field} 内容过长。`)
+  return text
+}
+
+function captureUrl(value: unknown) {
+  if (typeof value !== 'string' || value.length > 4096)
+    throw new ApiError(400, '来源网址不正确。')
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new ApiError(400, '来源网址不正确。')
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:')
+    throw new ApiError(400, '仅支持 HTTP 或 HTTPS 来源网址。')
+  return url.toString()
+}
+
+function captureTags(value: unknown) {
+  if (value === undefined || value === null) return []
+  if (!Array.isArray(value) || value.length > 20)
+    throw new ApiError(400, '标签数量不能超过 20 个。')
+  const tags = value.map((tag) => {
+    if (typeof tag !== 'string') throw new ApiError(400, '标签格式不正确。')
+    const normalized = tag.trim()
+    if (!normalized || [...normalized].length > 64)
+      throw new ApiError(400, '标签不能为空且不能超过 64 个字符。')
+    return normalized
+  })
+  return [...new Set(tags)]
+}
+
+function parseCapture(body: Record<string, unknown>) {
+  const kind = typeof body.kind === 'string' ? body.kind : ''
+  if (!CAPTURE_KINDS.has(kind)) throw new ApiError(400, 'Capture 类型不受支持。')
+
+  const title = optionalText(body.title, 500, '标题')
+  if (!title) throw new ApiError(400, '标题不能为空。')
+  const url = captureUrl(body.url)
+
+  let contentFormat: string | null = null
+  let content: string | null = null
+  if (body.content !== undefined && body.content !== null) {
+    if (!body.content || typeof body.content !== 'object')
+      throw new ApiError(400, '正文格式不正确。')
+    const payload = body.content as Record<string, unknown>
+    contentFormat = typeof payload.format === 'string' ? payload.format : ''
+    if (!CAPTURE_FORMATS.has(contentFormat))
+      throw new ApiError(400, '正文格式仅支持 text、markdown 或 html。')
+    if (typeof payload.value !== 'string')
+      throw new ApiError(400, '正文内容格式不正确。')
+    content = payload.value
+    if (encoder.encode(content).byteLength > MAX_CAPTURE_CONTENT_BYTES)
+      throw new ApiError(413, '正文不能超过 1 MB。')
+  }
+
+  const capturedAt =
+    body.capturedAt === undefined
+      ? Date.now()
+      : Number.isFinite(Number(body.capturedAt))
+        ? Number(body.capturedAt)
+        : NaN
+  if (!Number.isFinite(capturedAt) || capturedAt < 0)
+    throw new ApiError(400, 'capture 时间不正确。')
+
+  return {
+    kind,
+    title,
+    url,
+    contentFormat,
+    content,
+    selection: optionalText(body.selection, 100_000, '选中文本'),
+    excerpt: optionalText(body.excerpt, 10_000, '摘要'),
+    author: optionalText(body.author, 300, '作者'),
+    siteName: optionalText(body.siteName, 300, '站点名称'),
+    tags: captureTags(body.tags),
+    capturedAt,
+  }
+}
+
+function captureResponse(row: CaptureRow, includeContent = true) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    url: row.url,
+    content: includeContent && row.content
+      ? { format: row.content_format, value: row.content }
+      : null,
+    selection: includeContent ? row.selection : undefined,
+    excerpt: row.excerpt,
+    author: row.author,
+    siteName: row.site_name,
+    tags: JSON.parse(row.tags_json || '[]'),
+    capturedAt: row.captured_at,
+    createdAt: row.created_at,
+  }
+}
+
+async function createCapture(request: Request, user: SessionUser, env: Env) {
+  const raw = (await readJson(request, MAX_CAPTURE_BYTES)) as Record<string, unknown>
+  const capture = parseCapture(raw)
+  const id = crypto.randomUUID()
+  const createdAt = Date.now()
+
+  await env.DB.prepare(
+    'INSERT INTO captures (id, user_id, kind, title, url, content_format, content, selection, excerpt, author, site_name, tags_json, captured_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(
+      id,
+      user.id,
+      capture.kind,
+      capture.title,
+      capture.url,
+      capture.contentFormat,
+      capture.content,
+      capture.selection,
+      capture.excerpt,
+      capture.author,
+      capture.siteName,
+      JSON.stringify(capture.tags),
+      capture.capturedAt,
+      createdAt,
+    )
+    .run()
+
+  return json(
+    {
+      capture: {
+        id,
+        ...capture,
+        content: capture.content
+          ? { format: capture.contentFormat, value: capture.content }
+          : null,
+        createdAt,
+      },
+    },
+    201,
+  )
+}
+
+async function listCaptures(request: Request, user: SessionUser, env: Env) {
+  const url = new URL(request.url)
+  const requested = Number(url.searchParams.get('limit') || 50)
+  const limit = Math.max(1, Math.min(Number.isFinite(requested) ? Math.floor(requested) : 50, 100))
+  const result = await env.DB.prepare(
+    'SELECT id, kind, title, url, content_format, NULL AS content, NULL AS selection, excerpt, author, site_name, tags_json, captured_at, created_at FROM captures WHERE user_id = ? ORDER BY created_at DESC LIMIT ?',
+  )
+    .bind(user.id, limit)
+    .all<CaptureRow>()
+  return json({ captures: result.results.map((row) => captureResponse(row, false)) })
+}
+
+async function getCapture(id: string, user: SessionUser, env: Env) {
+  const row = await env.DB.prepare(
+    'SELECT id, kind, title, url, content_format, content, selection, excerpt, author, site_name, tags_json, captured_at, created_at FROM captures WHERE id = ? AND user_id = ?',
+  )
+    .bind(id, user.id)
+    .first<CaptureRow>()
+  if (!row) throw new ApiError(404, 'Capture 不存在。')
+  return json({ capture: captureResponse(row, true) })
+}
+
+async function deleteCapture(id: string, user: SessionUser, env: Env) {
+  const result = await env.DB.prepare('DELETE FROM captures WHERE id = ? AND user_id = ?')
+    .bind(id, user.id)
+    .run()
+  if (!result.meta.changes) throw new ApiError(404, 'Capture 不存在。')
+  return json({ ok: true })
+}
+
 async function route(request: Request, env: Env, ctx: ExecutionContext) {
   const url = new URL(request.url)
   const path = url.pathname.replace(/\/$/, '') || '/'
@@ -971,6 +1170,17 @@ async function route(request: Request, env: Env, ctx: ExecutionContext) {
     return getWorkspace(session.user, env)
   if (request.method === 'PUT' && path === '/v1/workspace')
     return putWorkspace(request, session.user, env, ctx)
+
+  if (request.method === 'POST' && path === '/v1/captures')
+    return createCapture(request, session.user, env)
+  if (request.method === 'GET' && path === '/v1/captures')
+    return listCaptures(request, session.user, env)
+  const captureMatch = path.match(/^\/v1\/captures\/([0-9a-f-]{36})$/i)
+  if (request.method === 'GET' && captureMatch)
+    return getCapture(captureMatch[1], session.user, env)
+  if (request.method === 'DELETE' && captureMatch)
+    return deleteCapture(captureMatch[1], session.user, env)
+
   throw new ApiError(404, '接口不存在。')
 }
 
@@ -1078,6 +1288,19 @@ const englishErrors: Record<string, string> = {
   'API Key 无效或没有访问该模型的权限。': 'The API key is invalid or cannot access this model.',
   'AI 服务额度不足或请求过于频繁，请检查账户后重试。': 'The AI service quota is exhausted or rate-limited. Check the account and try again.',
   'AI 没有返回有效文本，请尝试其他模型。': 'AI returned no usable text. Try another model.',
+  'Capture 类型不受支持。': 'This capture type is not supported.',
+  '标题不能为空。': 'A title is required.',
+  '来源网址不正确。': 'The source URL is invalid.',
+  '仅支持 HTTP 或 HTTPS 来源网址。': 'Only HTTP or HTTPS source URLs are supported.',
+  '标签数量不能超过 20 个。': 'A capture can have at most 20 tags.',
+  '标签格式不正确。': 'A capture tag is invalid.',
+  '标签不能为空且不能超过 64 个字符。': 'Capture tags must be 1 to 64 characters.',
+  '正文格式不正确。': 'The captured content payload is invalid.',
+  '正文格式仅支持 text、markdown 或 html。': 'Captured content must be text, markdown, or html.',
+  '正文内容格式不正确。': 'The captured content is invalid.',
+  '正文不能超过 1 MB。': 'Captured content must be 1 MB or smaller.',
+  'capture 时间不正确。': 'The capture timestamp is invalid.',
+  'Capture 不存在。': 'Capture not found.',
   '接口不存在。': 'Endpoint not found.',
   '不允许的请求来源。': 'This request origin is not allowed.',
 }
