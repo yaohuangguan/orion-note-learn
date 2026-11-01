@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 async function ready(page: Page) {
   await page.goto('/')
   await expect(page.locator('.library-page .view-heading h1')).toHaveText('我的笔记')
-  await page.getByRole('button', { name: '把学过的，变成真正掌握的', exact: true }).click()
+  await page.locator('.note-card').filter({ hasText: '把学过的，变成真正掌握的' }).locator('button.card-main').click()
   await expect(page.getByLabel('笔记标题', { exact: true })).toHaveValue('把学过的，变成真正掌握的')
   await expect(page.getByText('已保存', { exact: true })).toBeVisible()
 }
