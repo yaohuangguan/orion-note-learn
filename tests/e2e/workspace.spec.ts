@@ -1,9 +1,24 @@
 import { test, expect, type Page } from '@playwright/test'
 async function ready(page: Page) {
   await page.goto('/')
+  await expect(page.locator('.library-page .view-heading h1')).toHaveText('我的笔记')
+  await page.locator('.note-card').filter({ hasText: '把学过的，变成真正掌握的' }).locator('button.card-main').click()
   await expect(page.getByLabel('笔记标题', { exact: true })).toHaveValue('把学过的，变成真正掌握的')
   await expect(page.getByText('已保存', { exact: true })).toBeVisible()
 }
+
+test('opens My Notes by default and preserves explicit note deep links', async ({ page }) => {
+  await page.goto('/')
+  await expect(page.locator('.library-page .view-heading h1')).toHaveText('我的笔记')
+  await expect(page.getByLabel('笔记标题', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.note-card')).toHaveCount(4)
+
+  await page.goto('/?note=welcome')
+  await expect(page.getByLabel('笔记标题', { exact: true })).toHaveValue('把学过的，变成真正掌握的')
+
+  await page.goto('/')
+  await expect(page.locator('.library-page .view-heading h1')).toHaveText('我的笔记')
+})
 async function configureAI(page: Page) {
   await page.getByRole('button', { name: '设置', exact: true }).click()
   await page.getByLabel('AI 服务商').selectOption('deepseek')
@@ -448,7 +463,7 @@ test('iOS shows manual PWA install guidance instead of waiting for beforeinstall
   })
   const page = await context.newPage()
   await page.goto('/')
-  await expect(page.getByLabel('笔记标题', { exact: true })).toHaveValue('把学过的，变成真正掌握的')
+  await expect(page.locator('.library-page .view-heading h1')).toHaveText('我的笔记')
   await page.getByRole('button', { name: '打开侧栏' }).click()
   await page.getByRole('button', { name: '安装 Orion 应用' }).click()
 
@@ -471,6 +486,8 @@ test('English UI can be selected and persists after reload', async ({ page }) =>
   await expect(page.getByLabel('Search notes')).toBeVisible()
   await page.reload()
   await expect(page.getByRole('button', { name: 'All notes', exact: false })).toBeVisible()
+  await expect(page.locator('.library-page .view-heading h1')).toHaveText('My Notes')
+  await page.getByRole('button', { name: 'Welcome to Orion — Learn privately, remember deeply', exact: true }).click()
   await expect(page.getByLabel('Note title')).toHaveValue('Welcome to Orion — Learn privately, remember deeply')
   await expect(page.getByRole('textbox', { name: 'Note content' })).toContainText('Private by design')
 })
@@ -495,6 +512,7 @@ test('handwriting supports strokes, undo, redo and reload', async ({ page }) => 
   await expect(board.locator('path')).toHaveCount(1)
   await expect(page.getByText('已保存', { exact: true })).toBeVisible()
   await page.reload()
+  await page.getByRole('button', { name: '把学过的，变成真正掌握的', exact: true }).click()
   await page.getByRole('tab', { name: '手写画板' }).click()
   await expect(board.locator('path')).toHaveCount(1)
   const event = page.waitForEvent('download')

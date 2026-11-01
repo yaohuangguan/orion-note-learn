@@ -121,11 +121,9 @@ export default function App() {
   const cloudPendingWorkspace = useRef<Workspace | null>(null)
   const cloudLastPushed = useRef<Workspace | null>(null)
   const [selectedId, setSelectedId] = useState(
-    () =>
-      new URLSearchParams(window.location.search).get('note') ||
-      (language === 'en' ? 'welcome-en' : 'welcome'),
+    () => new URLSearchParams(window.location.search).get('note') || '',
   )
-  const [view, setView] = useState<View>('editor')
+  const [view, setView] = useState<View>(() => selectedId ? 'editor' : 'library')
   const [folder, setFolder] = useState('')
   const [favorites, setFavorites] = useState(false)
   const [search, setSearch] = useState('')
